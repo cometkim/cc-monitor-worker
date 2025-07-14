@@ -1,0 +1,324 @@
+{
+  "resourceMetrics": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "session.id",
+            "value": {
+              "stringValue": "sess_2024_01_15_14_30_45_abc123"
+            }
+          },
+          {
+            "key": "app.version",
+            "value": {
+              "stringValue": "1.2.3"
+            }
+          },
+          {
+            "key": "organization.id",
+            "value": {
+              "stringValue": "anthropic_internal"
+            }
+          },
+          {
+            "key": "user.account_uuid",
+            "value": {
+              "stringValue": "user_dev_team_jane_doe"
+            }
+          },
+          {
+            "key": "terminal.type",
+            "value": {
+              "stringValue": "vscode"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeMetrics": [
+        {
+          "scope": {
+            "name": "com.anthropic.claude_code",
+            "version": "1.0.0",
+            "attributes": [],
+            "droppedAttributesCount": 0
+          },
+          "metrics": [
+            {
+              "name": "claude_code.session.count",
+              "description": "Count of CLI sessions started",
+              "unit": "count",
+              "sum": {
+                "dataPoints": [
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1705321845000000000",
+                    "timeUnixNano": "1705321845000000000",
+                    "asInt": "1",
+                    "exemplars": [],
+                    "flags": 0
+                  }
+                ],
+                "aggregationTemporality": 2,
+                "isMonotonic": true
+              }
+            },
+            {
+              "name": "claude_code.lines_of_code.count",
+              "description": "Count of lines of code modified",
+              "unit": "count",
+              "sum": {
+                "dataPoints": [
+                  {
+                    "attributes": [
+                      {
+                        "key": "type",
+                        "value": {
+                          "stringValue": "added"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1705321845000000000",
+                    "timeUnixNano": "1705321907000000000",
+                    "asInt": "127",
+                    "exemplars": [],
+                    "flags": 0
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "type",
+                        "value": {
+                          "stringValue": "removed"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1705321845000000000",
+                    "timeUnixNano": "1705321907000000000",
+                    "asInt": "34",
+                    "exemplars": [],
+                    "flags": 0
+                  }
+                ],
+                "aggregationTemporality": 2,
+                "isMonotonic": true
+              }
+            },
+            {
+              "name": "claude_code.commit.count",
+              "description": "Number of git commits created",
+              "unit": "count",
+              "sum": {
+                "dataPoints": [
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1705321845000000000",
+                    "timeUnixNano": "1705321967000000000",
+                    "asInt": "2",
+                    "exemplars": [],
+                    "flags": 0
+                  }
+                ],
+                "aggregationTemporality": 2,
+                "isMonotonic": true
+              }
+            },
+            {
+              "name": "claude_code.token.usage",
+              "description": "Number of tokens used",
+              "unit": "tokens",
+              "sum": {
+                "dataPoints": [
+                  {
+                    "attributes": [
+                      {
+                        "key": "type",
+                        "value": {
+                          "stringValue": "input"
+                        }
+                      },
+                      {
+                        "key": "model",
+                        "value": {
+                          "stringValue": "claude-3-5-sonnet-20241022"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1705321845000000000",
+                    "timeUnixNano": "1705321887000000000",
+                    "asInt": "2847",
+                    "exemplars": [],
+                    "flags": 0
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "type",
+                        "value": {
+                          "stringValue": "output"
+                        }
+                      },
+                      {
+                        "key": "model",
+                        "value": {
+                          "stringValue": "claude-3-5-sonnet-20241022"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1705321845000000000",
+                    "timeUnixNano": "1705321887000000000",
+                    "asInt": "1293",
+                    "exemplars": [],
+                    "flags": 0
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "type",
+                        "value": {
+                          "stringValue": "cacheRead"
+                        }
+                      },
+                      {
+                        "key": "model",
+                        "value": {
+                          "stringValue": "claude-3-5-sonnet-20241022"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1705321845000000000",
+                    "timeUnixNano": "1705321887000000000",
+                    "asInt": "1024",
+                    "exemplars": [],
+                    "flags": 0
+                  }
+                ],
+                "aggregationTemporality": 2,
+                "isMonotonic": true
+              }
+            },
+            {
+              "name": "claude_code.cost.usage",
+              "description": "Cost of the Claude Code session",
+              "unit": "USD",
+              "sum": {
+                "dataPoints": [
+                  {
+                    "attributes": [
+                      {
+                        "key": "model",
+                        "value": {
+                          "stringValue": "claude-3-5-sonnet-20241022"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1705321845000000000",
+                    "timeUnixNano": "1705321887000000000",
+                    "asDouble": 0.0847,
+                    "exemplars": [],
+                    "flags": 0
+                  }
+                ],
+                "aggregationTemporality": 2,
+                "isMonotonic": true
+              }
+            },
+            {
+              "name": "claude_code.code_edit_tool.decision",
+              "description": "Count of code editing tool permission decisions",
+              "unit": "count",
+              "sum": {
+                "dataPoints": [
+                  {
+                    "attributes": [
+                      {
+                        "key": "tool",
+                        "value": {
+                          "stringValue": "Edit"
+                        }
+                      },
+                      {
+                        "key": "decision",
+                        "value": {
+                          "stringValue": "accept"
+                        }
+                      },
+                      {
+                        "key": "language",
+                        "value": {
+                          "stringValue": "TypeScript"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1705321845000000000",
+                    "timeUnixNano": "1705321887000000000",
+                    "asInt": "8",
+                    "exemplars": [],
+                    "flags": 0
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "tool",
+                        "value": {
+                          "stringValue": "Write"
+                        }
+                      },
+                      {
+                        "key": "decision",
+                        "value": {
+                          "stringValue": "accept"
+                        }
+                      },
+                      {
+                        "key": "language",
+                        "value": {
+                          "stringValue": "JavaScript"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1705321845000000000",
+                    "timeUnixNano": "1705321907000000000",
+                    "asInt": "3",
+                    "exemplars": [],
+                    "flags": 0
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "tool",
+                        "value": {
+                          "stringValue": "MultiEdit"
+                        }
+                      },
+                      {
+                        "key": "decision",
+                        "value": {
+                          "stringValue": "reject"
+                        }
+                      },
+                      {
+                        "key": "language",
+                        "value": {
+                          "stringValue": "Python"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1705321845000000000",
+                    "timeUnixNano": "1705321923000000000",
+                    "asInt": "1",
+                    "exemplars": [],
+                    "flags": 0
+                  }
+                ],
+                "aggregationTemporality": 2,
+                "isMonotonic": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

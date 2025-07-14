@@ -1,0 +1,14 @@
+{
+  "name": "cc-monitor",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-07-12",
+	"observability": {
+		"enabled": true
+	},
+	"analytics_engine_datasets": [
+		{
+			"binding": "ANALYTICS_ENGINE",
+			"dataset": "claude_code_metrics"
+		}
+	]
+}
