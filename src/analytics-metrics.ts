@@ -37,49 +37,41 @@ const METRIC_CONFIGS: Record<string, MetricConfig> = {
     metricType: "session_count",
     requiredAttributes: ["organization.id", "session.id", "terminal.type", "user.account_uuid", "user.email", "user.id"],
     specificBlobs: {},
-    // indexes: ["organization.id", "user.account_uuid", "session.id"],
   },
   "claude_code.cost.usage": {
     metricType: "cost_usage",
     requiredAttributes: ["model", "organization.id", "session.id", "terminal.type", "user.account_uuid", "user.email", "user.id"],
     specificBlobs: { 10: "model" },
-    // indexes: ["organization.id", "user.account_uuid", "session.id"],
   },
   "claude_code.token.usage": {
     metricType: "token_usage",
     requiredAttributes: ["model", "organization.id", "session.id", "terminal.type", "type", "user.account_uuid", "user.email", "user.id"],
     specificBlobs: { 10: "model", 11: "type" },
-    // indexes: ["organization.id", "user.account_uuid", "session.id"],
   },
   "claude_code.active_time.total": {
     metricType: "active_time_total",
     requiredAttributes: ["type", "organization.id", "session.id", "terminal.type", "user.account_uuid", "user.email", "user.id"],
     specificBlobs: { 11: "type" },
-    // indexes: ["organization.id", "user.account_uuid", "session.id"],
   },
   "claude_code.lines_of_code.count": {
     metricType: "lines_of_code",
     requiredAttributes: ["type", "organization.id", "session.id", "terminal.type", "user.account_uuid", "user.email", "user.id"],
     specificBlobs: { 11: "type" },
-    // indexes: ["organization.id", "user.account_uuid", "session.id"],
   },
   "claude_code.pull_request.count": {
     metricType: "pull_request_count",
     requiredAttributes: ["organization.id", "session.id", "terminal.type", "user.account_uuid", "user.email", "user.id"],
     specificBlobs: {},
-    // indexes: ["organization.id", "user.account_uuid", "session.id"],
   },
   "claude_code.commit.count": {
     metricType: "commit_count",
     requiredAttributes: ["organization.id", "session.id", "terminal.type", "user.account_uuid", "user.email", "user.id"],
     specificBlobs: {},
-    // indexes: ["organization.id", "user.account_uuid", "session.id"],
   },
   "claude_code.code_edit_tool.decision": {
     metricType: "code_edit_tool_decision",
     requiredAttributes: ["decision", "language", "organization.id", "session.id", "terminal.type", "tool", "user.account_uuid", "user.email", "user.id"],
     specificBlobs: { 11: "decision", 12: "language", 13: "tool" },
-    // indexes: ["organization.id", "user.account_uuid", "session.id"],
   },
 };
 
@@ -99,9 +91,7 @@ function createBaseBlobs(
     assertAttribute(attrs, "user.email"),        // blob7: user_email
     assertAttribute(attrs, "session.id"),        // blob8: session_id
     assertAttribute(attrs, "terminal.type"),     // blob9: terminal_type
-
-    // blob10: model (filled by specific metrics)
-    // blob11-20: specific or reserved
+    // blob10-20: specific or reserved
   ];
 }
 
@@ -128,16 +118,9 @@ function processMetricPoint(
   const timestampNs = assertAttribute(point, "timeUnixNano");
   const timestampMs = Math.floor(parseInt(timestampNs) / 1_000_000);
   
-  // Build indexes from attribute values, then add metric type
-  // const indexes = config.indexes?.map(key => attrs[key]).filter(Boolean) ?? [];
-
   return {
     blobs,
     doubles: [value, timestampMs],
-
-    // Use user id for the sampling key.
-    // Note: only one index is allowed.
-    indexes: [attrs["user.account_uuid"]],
   };
 }
 

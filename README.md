@@ -74,11 +74,6 @@ You can query the collected data in the Cloudflare Console (Analytics Engine Stu
 - `double1`: `metric_value` - The actual metric value
 - `double2`: `timestamp_ms` - Timestamp in milliseconds
 
-**Index**:
-- `index1`: `metric_type`
-
-(Only one index is allowed)
-
 ### Example Analytics Engine Query
 
 ```sql
