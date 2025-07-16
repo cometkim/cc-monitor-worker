@@ -25,6 +25,7 @@ Once you deploy the worker to the `https://cc-monitor.your-org.workers.dev`, you
     "OTEL_METRICS_EXPORTER": "otlp",
     "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
     "OTEL_EXPORTER_OTLP_ENDPOINT": "https://cc-monitor.your-org.workers.dev",
+    "OTEL_METRIC_EXPORT_INTERVAL": 10000,
 
     // See security section below
     "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer token"
@@ -35,21 +36,6 @@ Once you deploy the worker to the `https://cc-monitor.your-org.workers.dev`, you
 You can leverage your company's MDM solution to deploy this as [org-managed settings](https://docs.anthropic.com/en/docs/claude-code/monitoring-usage#administrator-configuration).
 
 See more details from the [Claude Code official guide](https://docs.anthropic.com/en/docs/claude-code/monitoring-usage).
-
-## Supported Metrics
-
-The endpoint processes the following Claude Code metrics:
-
-| Metric Name | Description | Attributes |
-|-------------|-------------|------------|
-| `claude_code.session.count` | CLI session starts | `user.id`, `organization.id`, `session.id`, `terminal.type` |
-| `claude_code.cost.usage` | Usage costs in USD | `model`, `user.id`, `organization.id`, `session.id` |
-| `claude_code.token.usage` | Token consumption | `model`, `type`, `user.id`, `organization.id`, `session.id` |
-| `claude_code.active_time.total` | Active time tracking | `type`, `user.id`, `organization.id`, `session.id` |
-| `claude_code.lines_of_code.count` | Code changes | `type`, `user.id`, `organization.id`, `session.id` |
-| `claude_code.pull_request.count` | PR creation events | `user.id`, `organization.id`, `session.id` |
-| `claude_code.commit.count` | Commit events | `user.id`, `organization.id`, `session.id` |
-| `claude_code.code_edit_tool.decision` | Tool decisions | `decision`, `language`, `tool`, `user.id`, `organization.id` |
 
 ## How to Query
 
@@ -67,12 +53,27 @@ You can query the collected data in the Cloudflare Console (Analytics Engine Stu
 - `blob7`: `user.email` (email address)
 - `blob8`: `session.id` (UUID)
 - `blob9`: `terminal.type` (e.g. `iTerm`)
-- `blob10`: `model` (e.g. `claude-sonnet-4-20250514`)
-- `blob11+`: Metric-specific attributes
+- `blob10+`: Metric-specific attributes
 
 **Doubles:**
 - `double1`: `metric_value` - The actual metric value
 - `double2`: `timestamp_ms` - Timestamp in milliseconds
+
+### Supported Metrics
+
+The endpoint processes the following Claude Code metrics:
+
+| Metric Name | Description | Additional Attributes |
+|-------------|-------------|------------|
+| `claude_code.session.count` | CLI session starts |  |
+| `claude_code.cost.usage` | Usage costs in USD | `model` |
+| `claude_code.token.usage` | Token consumption | `model` |
+| `claude_code.active_time.total` | Active time tracking |  |
+| `claude_code.lines_of_code.count` | Code changes | |
+| `claude_code.pull_request.count` | PR creation events |  |
+| `claude_code.commit.count` | Commit events |  |
+| `claude_code.code_edit_tool.decision` | Tool decisions | `decision`, `language`, `tool` |
+
 
 ### Example Analytics Engine Query
 
