@@ -82,7 +82,7 @@ SELECT
   blob1 as metric_type,
   blob7 as user_email,
   SUM(double2) as total_value
-FROM claude_code_metrics
+FROM claude_code_metrics_{{SCHEMA_VERSION}}
 WHERE metric_type = 'cost_usage'
 GROUP BY metric_type, user_email
 ORDER BY total_value DESC
