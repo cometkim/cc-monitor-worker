@@ -70,8 +70,8 @@ const METRIC_CONFIGS: Record<string, MetricConfig> = {
   },
   "claude_code.code_edit_tool.decision": {
     metricType: "code_edit_tool_decision",
-    requiredAttributes: ["decision", "language", "organization.id", "session.id", "terminal.type", "tool", "user.account_uuid", "user.email", "user.id"],
-    specificBlobs: { 11: "decision", 12: "language", 13: "tool" },
+    requiredAttributes: ["decision", "language", "organization.id", "session.id", "terminal.type", "tool_name", "user.account_uuid", "user.email", "user.id"],
+    specificBlobs: { 11: "decision", 12: "language", 13: "tool_name" },
   },
 };
 

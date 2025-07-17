@@ -72,7 +72,7 @@ The endpoint processes the following Claude Code metrics:
 | `claude_code.lines_of_code.count` | Code changes | |
 | `claude_code.pull_request.count` | PR creation events |  |
 | `claude_code.commit.count` | Commit events |  |
-| `claude_code.code_edit_tool.decision` | Tool decisions | `decision`, `language`, `tool` |
+| `claude_code.code_edit_tool.decision` | Tool decisions | `decision`, `language`, `tool_name` |
 
 
 ### Example Analytics Engine Query
