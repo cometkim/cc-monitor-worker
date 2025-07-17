@@ -120,7 +120,7 @@ function processMetricPoint(
   
   return {
     blobs,
-    doubles: [value, timestampMs],
+    doubles: [timestampMs, value],
   };
 }
 

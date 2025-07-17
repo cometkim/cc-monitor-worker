@@ -56,8 +56,8 @@ You can query the collected data in the Cloudflare Console (Analytics Engine Stu
 - `blob10+`: Metric-specific attributes
 
 **Doubles:**
-- `double1`: `metric_value` - The actual metric value
-- `double2`: `timestamp_ms` - Timestamp in milliseconds
+- `double1`: `timestamp_ms` - Timestamp in milliseconds
+- `double2`: `metric_value` - The actual metric value
 
 ### Supported Metrics
 
@@ -81,7 +81,7 @@ The endpoint processes the following Claude Code metrics:
 SELECT 
   blob1 as metric_type,
   blob7 as user_email,
-  SUM(double1) as total_value
+  SUM(double2) as total_value
 FROM claude_code_metrics
 WHERE metric_type = 'cost_usage'
 GROUP BY metric_type, user_email

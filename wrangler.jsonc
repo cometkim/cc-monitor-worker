@@ -8,7 +8,7 @@
 	"analytics_engine_datasets": [
 		{
 			"binding": "ANALYTICS_ENGINE",
-			"dataset": "claude_code_metrics"
+			"dataset": "claude_code_metrics_v20250717"
 		}
 	]
 }
