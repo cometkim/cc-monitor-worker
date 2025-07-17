@@ -109,7 +109,7 @@ function processMetricPoint(
   }
   // Fill specific blob positions
   for (const [blobIndex, attrKey] of Object.entries(config.specificBlobs)) {
-    blobs[parseInt(blobIndex)] = assertAttribute(attrs, attrKey);
+    blobs[parseInt(blobIndex) - 1] = assertAttribute(attrs, attrKey);
   }
 
   const value = point.asDouble || parseFloat(point.asInt || "0");
