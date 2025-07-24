@@ -3,7 +3,7 @@
 Monitor your Claude Code usage with Cloudflare Workers and [Workers Analytics Engine](https://developers.cloudflare.com/analytics/analytics-engine/).
 
 - **Public, Secure** endpoint for OpenTelemetry/OTLP
-- Powerful analytics via **ClickHouse SQL**
+- Powerful analytics via **SQL**
 - Truly **Serverless**, zero-maintenance
 
 One-click deployment with
@@ -16,22 +16,24 @@ Monitoring via OpenTelemetry is the Claude Code built-in feature.
 
 Once you deploy the worker to the `https://cc-monitor.your-org.workers.dev`, you can enable monitoring with env settings like:
 
-```jsonc
+```json
 {
   "env": {
     "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
 
-    // Currently support metrics only
     "OTEL_METRICS_EXPORTER": "otlp",
     "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
     "OTEL_EXPORTER_OTLP_ENDPOINT": "https://cc-monitor.your-org.workers.dev",
-    "OTEL_METRIC_EXPORT_INTERVAL": 10000,
 
-    // See security section below
+    "OTEL_METRIC_EXPORT_INTERVAL": 3000,
+
     "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer token"
   }
 }
 ```
+
+- `OTEL_METRIC_EXPORT_INTERVAL`: Specify a short interval to minimize data loss.
+- `OTEL_EXPORTER_OTLP_HEADERS`: See the [security](#security) section below.
 
 You can leverage your company's MDM solution to deploy this as [org-managed settings](https://docs.anthropic.com/en/docs/claude-code/monitoring-usage#administrator-configuration).
 
@@ -65,14 +67,14 @@ The endpoint processes the following Claude Code metrics:
 
 | Metric Name | Description | Additional Attributes |
 |-------------|-------------|------------|
-| `claude_code.session.count` | CLI session starts |  |
-| `claude_code.cost.usage` | Usage costs in USD | `model` |
-| `claude_code.token.usage` | Token consumption | `model` |
-| `claude_code.active_time.total` | Active time tracking |  |
-| `claude_code.lines_of_code.count` | Code changes | |
-| `claude_code.pull_request.count` | PR creation events |  |
-| `claude_code.commit.count` | Commit events |  |
-| `claude_code.code_edit_tool.decision` | Tool decisions | `decision`, `language`, `tool_name` |
+| `session_count` | CLI session starts |  |
+| `cost_usage` | Usage costs in USD | `blob10` (model) |
+| `token_usage` | Token consumption | `blob10` (model) |
+| `active_time_total` | Active time tracking |  |
+| `lines_of_code` | Code changes | |
+| `pull_request_count` | PR creation events |  |
+| `commit_count` | Commit events |  |
+| `code_edit_tool_decision` | Tool decisions | `blob11` (decision), `blob12` (language), `blob13` (tool_name) |
 
 
 ### Example Analytics Engine Query
