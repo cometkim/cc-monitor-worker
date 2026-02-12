@@ -1,4 +1,4 @@
-# AGENT.md - Cloudflare Workers OTLP Metrics Endpoint
+# AGENTS.md - Cloudflare Workers for monitoring Claude Code
 
 ## Commands
 - **Dev**: `bun run dev` (or `wrangler dev`)
