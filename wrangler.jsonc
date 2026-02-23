@@ -1,14 +1,18 @@
 {
   "name": "cc-monitor",
   "main": "src/index.ts",
-  "compatibility_date": "2025-07-12",
+  "compatibility_date": "2026-02-23",
   "observability": {
     "enabled": true
   },
   "analytics_engine_datasets": [
     {
-      "binding": "ANALYTICS_ENGINE",
+      "binding": "OTEL_METRICS",
       "dataset": "claude_code_metrics_v20250717"
+    },
+    {
+      "binding": "PROXY_METRICS",
+      "dataset": "claude_proxy_metrics_v20260223"
     }
   ]
 }

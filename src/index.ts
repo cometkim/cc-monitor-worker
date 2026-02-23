@@ -7,18 +7,26 @@ import type {
   Status,
 } from "./types/otlp.ts";
 import { convertOTLPToAnalytics } from "./analytics-metrics.ts";
+import { proxyRequest } from "./proxy.ts";
 
-const app = new Hono<{ Bindings: CloudflareBindings }>();
+type Env = { Bindings: Cloudflare.Env };
 
-const auth = createMiddleware(async (c, next) => {
-  const token = c.env.AUTH_SECRET;
-  if (token) {
-    const auth = bearerAuth({ token });
-    return auth(c, next);
-  }
-  console.warn("Authorization header checking is skipped. Consider to set AUTH_SECRET for your worker security.");
-  await next();
-});
+const app = new Hono<Env>();
+
+export function createAuth(headerName?: string) {
+  return createMiddleware<Env>(async (c, next) => {
+    const token = c.env.AUTH_SECRET;
+    if (token) {
+      const auth = bearerAuth({ token, headerName });
+      return auth(c, next);
+    }
+    console.warn("Authorization header checking is skipped. Consider to set AUTH_SECRET for your worker security.");
+    await next();
+  });
+}
+
+const auth = createAuth();
+const proxyAuth = createAuth("X-Proxy-Authorization");
 
 app.post("/v1/metrics", auth, async (c) => {
   try {
@@ -62,10 +70,10 @@ app.post("/v1/metrics", auth, async (c) => {
     
     for (const dataPoint of analyticsDataPoints) {
       try {
-        c.env.ANALYTICS_ENGINE.writeDataPoint(dataPoint);
+        c.env.OTEL_METRICS.writeDataPoint(dataPoint);
         writtenDataPoints++;
       } catch (error) {
-        console.error("Failed to write data point:", error, dataPoint);
+        console.error("Failed to write data point: ", error, dataPoint);
         rejectedDataPoints++;
       }
     }
@@ -91,6 +99,28 @@ app.post("/v1/metrics", auth, async (c) => {
       message: "Internal server error",
     };
     return c.json(errorResponse, 500);
+  }
+});
+
+app.all("/proxy/*", proxyAuth, async (c) => {
+  try {
+    const response = await proxyRequest(c, (points) => {
+      for (const point of points) {
+        try {
+          c.env.PROXY_METRICS.writeDataPoint(point);
+        } catch (error) {
+          console.error("Failed to write proxy metrics", error);
+        }
+      }
+    });
+    return response;
+  } catch (error) {
+    console.error("Proxy error", error);
+    const errorResponse: Status = {
+      code: 13,
+      message: error instanceof Error ? error.message : "Proxy error",
+    };
+    return c.json(errorResponse, 502);
   }
 });
 
