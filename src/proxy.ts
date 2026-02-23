@@ -329,6 +329,7 @@ export function extractMetricsFromStreamingResponse(
         serviceVersion,
         userId: context?.userId,
         userAccountId: context?.userAccountId,
+        userEmail: context?.userEmail,
         sessionId: context?.sessionId,
       };
     }
