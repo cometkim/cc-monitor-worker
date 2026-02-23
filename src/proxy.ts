@@ -1,4 +1,4 @@
-import type { Context } from "hono";
+import type { Context, ExecutionContext } from "hono";
 import type { AnthropicRequest, AnthropicResponse, AnthropicStreamingEvent, AnthropicUsage } from "./types/anthropic.ts";
 
 const ANTHROPIC_API_BASE = new URL("https://api.anthropic.com");
