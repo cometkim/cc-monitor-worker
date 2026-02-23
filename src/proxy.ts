@@ -543,9 +543,12 @@ export async function proxyRequest(
 
   const response = await fetch(proxyRequest);
 
-  const isStreaming = response.headers.get("content-type")?.includes("text/event-stream");
-  if (isStreaming) {
-    return handleStreamingResponse(response, startTime, writeMetrics, contextPromise, ctx.executionCtx);
+  if (targetUrl.pathname === "/v1/messages") {
+    const isStreaming = response.headers.get("content-type")?.includes("text/event-stream");
+    return isStreaming
+      ? handleStreamingResponse(response, startTime, writeMetrics, contextPromise, ctx.executionCtx)
+      : handleNonStreamingResponse(response, startTime, writeMetrics, contextPromise);
   }
-  return handleNonStreamingResponse(response, startTime, writeMetrics, contextPromise);
+
+  return response;
 }
