@@ -12,7 +12,6 @@ const CostMultiplier = {
   Cache_Write_1h: 2,
   Long_Context_Input: 2,
   Long_Context_Output: 1.5,
-  Batch: 0.5,
   US_Only: 1.1,
 } as const;
 
@@ -368,6 +367,12 @@ export function metricsToDataPoints(metrics: ProxyMetrics): AnalyticsEngineDataP
     console.warn("No price information found for model: %s", model);
   }
 
+  const effectiveInputContext = usage.input_tokens 
+    + (usage.cache_read_input_tokens || 0)
+    + (usage.cache_creation_input_tokens || 0);
+
+  const isLongContext = effectiveInputContext > 200_000;
+
   points.push(
     createDataPoint(
       "api_request",
@@ -397,11 +402,8 @@ export function metricsToDataPoints(metrics: ProxyMetrics): AnalyticsEngineDataP
     );
     if (price) {
       let cost = (usage.input_tokens / 1_000_000) * price.input;
-      if (usage.input_tokens > 200_000) {
+      if (isLongContext) {
         cost *= CostMultiplier.Long_Context_Input;
-      }
-      if (usage.service_tier === "batch") {
-        cost *= CostMultiplier.Batch;
       }
       if (usage.inference_geo === "us") {
         cost *= CostMultiplier.US_Only;
@@ -428,11 +430,8 @@ export function metricsToDataPoints(metrics: ProxyMetrics): AnalyticsEngineDataP
     );
     if (price) {
       let cost = usage.output_tokens / 1_000_000 * price.output;
-      if (usage.output_tokens > 200_000) {
+      if (isLongContext) {
         cost *= CostMultiplier.Long_Context_Output;
-      }
-      if (usage.service_tier === "batch") {
-        cost *= CostMultiplier.Batch;
       }
       if (usage.inference_geo === "us") {
         cost *= CostMultiplier.US_Only;
@@ -459,11 +458,8 @@ export function metricsToDataPoints(metrics: ProxyMetrics): AnalyticsEngineDataP
     );
     if (price) {
       let cost = (usage.cache_read_input_tokens / 1_000_000) * price.input * CostMultiplier.Cache_Read;
-      if (usage.cache_read_input_tokens > 200_000) {
+      if (isLongContext) {
         cost *= CostMultiplier.Long_Context_Input;
-      }
-      if (usage.service_tier === "batch") {
-        cost *= CostMultiplier.Batch;
       }
       if (usage.inference_geo === "us") {
         cost *= CostMultiplier.US_Only;
@@ -491,11 +487,8 @@ export function metricsToDataPoints(metrics: ProxyMetrics): AnalyticsEngineDataP
       );
       if (price) {
         let cost = (usage.cache_creation.ephemeral_5m_input_tokens / 1_000_000) * price.input * CostMultiplier.Cache_Write_5m;
-        if (usage.cache_creation.ephemeral_5m_input_tokens > 200_000) {
+        if (isLongContext) {
           cost *= CostMultiplier.Long_Context_Input;
-        }
-        if (usage.service_tier === "batch") {
-          cost *= CostMultiplier.Batch;
         }
         if (usage.inference_geo === "us") {
           cost *= CostMultiplier.US_Only;
@@ -521,7 +514,7 @@ export function metricsToDataPoints(metrics: ProxyMetrics): AnalyticsEngineDataP
       );
       if (price) {
         let cost = (usage.cache_creation.ephemeral_1h_input_tokens / 1_000_000) * price.input * CostMultiplier.Cache_Write_1h;
-        if (usage.cache_creation.ephemeral_1h_input_tokens > 200_000) {
+        if (isLongContext) {
           cost *= CostMultiplier.Long_Context_Input;
         }
         if (usage.service_tier === "batch") {
@@ -551,7 +544,7 @@ export function metricsToDataPoints(metrics: ProxyMetrics): AnalyticsEngineDataP
     );
     if (price) {
       let cost = (usage.cache_creation_input_tokens / 1_000_000) * price.input * CostMultiplier.Cache_Write_5m;
-      if (usage.cache_creation_input_tokens > 200_000) {
+      if (isLongContext) {
         cost *= CostMultiplier.Long_Context_Input;
       }
       if (usage.service_tier === "batch") {
