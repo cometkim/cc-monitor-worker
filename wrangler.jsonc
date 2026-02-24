@@ -2,6 +2,9 @@
   "name": "cc-monitor",
   "main": "src/index.ts",
   "compatibility_date": "2026-02-23",
+  "placement": {
+    "host": "api.anthropic.com"
+  },
   "observability": {
     "enabled": true,
     "traces": {
