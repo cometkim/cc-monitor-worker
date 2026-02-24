@@ -7,30 +7,31 @@ interface ModelPrice {
   input: number;
   output: number;
   cacheRead: number;
-  cacheWrite: number;
+  cacheWrite_5m: number;
+  cacheWrite_1h: number;
 }
 
 const MODEL_PRICES: [prefix: string, price: ModelPrice][] = [
   // Haiku Series
-  ["claude-haiku-4-5", { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 }],
-  ["claude-3-5-haiku", { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 }],
-  ["claude-3-haiku", { input: 0.25, output: 1.25, cacheRead: 0.03, cacheWrite: 0.3 }],
+  ["claude-haiku-4-5", { input: 1, output: 5, cacheRead: 0.1, cacheWrite_5m: 1.25, cacheWrite_1h: 2 }],
+  ["claude-3-5-haiku", { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite_5m: 1, cacheWrite_1h: 1.6 }],
+  ["claude-3-haiku", { input: 0.25, output: 1.25, cacheRead: 0.03, cacheWrite_5m: 0.3, cacheWrite_1h: 0.5 }],
 
   // Sonnet Series
-  ["claude-sonnet-4-6", { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }],
-  ["claude-sonnet-4-5", { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }],
-  ["claude-sonnet-4-0", { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }],
-  ["claude-sonnet-4", { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }],
-  ["claude-3-7-sonnet", { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }],
-  ["claude-3-5-sonnet", { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }],
+  ["claude-sonnet-4-6", { input: 3, output: 15, cacheRead: 0.3, cacheWrite_5m: 3.75, cacheWrite_1h: 6 }],
+  ["claude-sonnet-4-5", { input: 3, output: 15, cacheRead: 0.3, cacheWrite_5m: 3.75, cacheWrite_1h: 6 }],
+  ["claude-sonnet-4-0", { input: 3, output: 15, cacheRead: 0.3, cacheWrite_5m: 3.75, cacheWrite_1h: 6 }],
+  ["claude-sonnet-4", { input: 3, output: 15, cacheRead: 0.3, cacheWrite_5m: 3.75, cacheWrite_1h: 6 }],
+  ["claude-3-7-sonnet", { input: 3, output: 15, cacheRead: 0.3, cacheWrite_5m: 3.75, cacheWrite_1h: 6 }],
+  ["claude-3-5-sonnet", { input: 3, output: 15, cacheRead: 0.3, cacheWrite_5m: 3.75, cacheWrite_1h: 6 }],
 
   // Opus Series
-  ["claude-opus-4-6", { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }],
-  ["claude-opus-4-5", { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }],
-  ["claude-opus-4-1", { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 }],
-  ["claude-opus-4-0", { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 }],
-  ["claude-opus-4", { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 }],
-  ["claude-3-opus", { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 }],
+  ["claude-opus-4-6", { input: 5, output: 25, cacheRead: 0.5, cacheWrite_5m: 6.25, cacheWrite_1h: 10 }],
+  ["claude-opus-4-5", { input: 5, output: 25, cacheRead: 0.5, cacheWrite_5m: 6.25, cacheWrite_1h: 10 }],
+  ["claude-opus-4-1", { input: 15, output: 75, cacheRead: 1.5, cacheWrite_5m: 18.75, cacheWrite_1h: 30 }],
+  ["claude-opus-4-0", { input: 15, output: 75, cacheRead: 1.5, cacheWrite_5m: 18.75, cacheWrite_1h: 30 }],
+  ["claude-opus-4", { input: 15, output: 75, cacheRead: 1.5, cacheWrite_5m: 18.75, cacheWrite_1h: 30 }],
+  ["claude-3-opus", { input: 15, output: 75, cacheRead: 1.5, cacheWrite_5m: 18.75, cacheWrite_1h: 30 }],
 ];
 
 function getModelPrice(model: string) {
@@ -319,9 +320,16 @@ export function extractMetricsFromStreamingResponse(
     if (event.type === "message_start" && event.message) {
       requestId = event.message.id;
       model = event.message.model;
+
+      // input usage is fixed at here
+      // caching ttl info is only available in message_start
+      usage = event.message.usage;
     }
     if (event.type === "message_delta" && event.usage) {
-      usage = event.usage;
+      if (!usage) usage = event.usage;
+
+      // output usage need to update to the latest snapshot
+      usage.output_tokens = event.usage.output_tokens;
     }
     if (event.type === "message_stop" && usage) {
       const { serviceName, serviceVersion } = parseUserAgent(context?.userAgent || "");
@@ -426,21 +434,58 @@ export function metricsToDataPoints(metrics: ProxyMetrics): AnalyticsEngineDataP
     );
   }
 
-  if (usage.cache_creation_input_tokens) {
+  if (usage.cache_creation) {
+    if (usage.cache_creation.ephemeral_5m_input_tokens) {
+      points.push(
+        createDataPoint(
+          "token_usage",
+          usage.cache_creation.ephemeral_5m_input_tokens,
+          timestampMs,
+          { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation_5m" },
+        )
+      );
+      price && points.push(
+        createDataPoint(
+          "cost_usage",
+          (usage.cache_creation.ephemeral_5m_input_tokens / 1_000_000) * price.cacheWrite_5m,
+          timestampMs,
+          { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation_5m" },
+        )
+      );
+    }
+    if (usage.cache_creation.ephemeral_1h_input_tokens) {
+      points.push(
+        createDataPoint(
+          "token_usage",
+          usage.cache_creation.ephemeral_1h_input_tokens,
+          timestampMs,
+          { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation_1h" },
+        )
+      );
+      price && points.push(
+        createDataPoint(
+          "cost_usage",
+          (usage.cache_creation.ephemeral_1h_input_tokens / 1_000_000) * price.cacheWrite_1h,
+          timestampMs,
+          { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation_1h" },
+        )
+      );
+    }
+  } else if (usage.cache_creation_input_tokens) {
     points.push(
       createDataPoint(
         "token_usage",
         usage.cache_creation_input_tokens,
         timestampMs,
-        { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation" },
+        { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation_5m" },
       )
     );
     price && points.push(
       createDataPoint(
         "cost_usage",
-        (usage.cache_creation_input_tokens / 1_000_000) * price.cacheWrite,
+        (usage.cache_creation_input_tokens / 1_000_000) * price.cacheWrite_5m,
         timestampMs,
-        { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation" },
+        { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation_5m" },
       )
     );
   }
