@@ -25,6 +25,15 @@ function assertAttribute(attrs: Record<string, string>, key: string): string {
   return value;
 }
 
+function getOptionalAttribute(attrs: Record<string, string>, key: string): string | null {
+  const value = attrs[key];
+  if (!value) {
+    const metricKey = key;
+    console.warn(`Missing optional attribute: %s`, metricKey);
+  }
+  return value || null;
+}
+
 interface MetricConfig {
   metricType: string;
   requiredAttributes: string[];
@@ -35,42 +44,42 @@ interface MetricConfig {
 const METRIC_CONFIGS: Record<string, MetricConfig> = {
   "claude_code.session.count": {
     metricType: "session_count",
-    requiredAttributes: ["organization.id", "session.id", "terminal.type", "user.account_uuid", "user.email", "user.id"],
+    requiredAttributes: ["session.id", "user.id"],
     specificBlobs: {},
   },
   "claude_code.cost.usage": {
     metricType: "cost_usage",
-    requiredAttributes: ["model", "organization.id", "session.id", "terminal.type", "user.account_uuid", "user.email", "user.id"],
+    requiredAttributes: ["model", "session.id", "user.id"],
     specificBlobs: { 10: "model" },
   },
   "claude_code.token.usage": {
     metricType: "token_usage",
-    requiredAttributes: ["model", "organization.id", "session.id", "terminal.type", "type", "user.account_uuid", "user.email", "user.id"],
+    requiredAttributes: ["model", "session.id", "type", "user.id"],
     specificBlobs: { 10: "model", 11: "type" },
   },
   "claude_code.active_time.total": {
     metricType: "active_time_total",
-    requiredAttributes: ["type", "organization.id", "session.id", "terminal.type", "user.account_uuid", "user.email", "user.id"],
+    requiredAttributes: ["session.id", "type", "user.id"],
     specificBlobs: { 11: "type" },
   },
   "claude_code.lines_of_code.count": {
     metricType: "lines_of_code",
-    requiredAttributes: ["type", "organization.id", "session.id", "terminal.type", "user.account_uuid", "user.email", "user.id"],
+    requiredAttributes: ["session.id", "type", "user.id"],
     specificBlobs: { 11: "type" },
   },
   "claude_code.pull_request.count": {
     metricType: "pull_request_count",
-    requiredAttributes: ["organization.id", "session.id", "terminal.type", "user.account_uuid", "user.email", "user.id"],
+    requiredAttributes: ["session.id", "user.id"],
     specificBlobs: {},
   },
   "claude_code.commit.count": {
     metricType: "commit_count",
-    requiredAttributes: ["organization.id", "session.id", "terminal.type", "user.account_uuid", "user.email", "user.id"],
+    requiredAttributes: ["session.id", "user.id"],
     specificBlobs: {},
   },
   "claude_code.code_edit_tool.decision": {
     metricType: "code_edit_tool_decision",
-    requiredAttributes: ["decision", "language", "organization.id", "session.id", "terminal.type", "tool_name", "user.account_uuid", "user.email", "user.id"],
+    requiredAttributes: ["decision", "language", "session.id", "tool_name", "user.id"],
     specificBlobs: { 11: "decision", 12: "language", 13: "tool_name" },
   },
 };
@@ -80,17 +89,17 @@ function createBaseBlobs(
   serviceVersion: string,
   metricType: string,
   attrs: Record<string, string>
-): string[] {
+): (string | null)[] {
   return [
-    metricType,                                  // blob1: metric_type
-    serviceName,                                 // blob2: service_name
-    serviceVersion,                              // blob3: service_version
-    assertAttribute(attrs, "organization.id"),   // blob4: organization_id
-    assertAttribute(attrs, "user.id"),           // blob5: user_id
-    assertAttribute(attrs, "user.account_uuid"), // blob6: user_account_uuid
-    assertAttribute(attrs, "user.email"),        // blob7: user_email
-    assertAttribute(attrs, "session.id"),        // blob8: session_id
-    assertAttribute(attrs, "terminal.type"),     // blob9: terminal_type
+    metricType,                                      // blob1: metric_type
+    serviceName,                                     // blob2: service_name
+    serviceVersion,                                  // blob3: service_version
+    getOptionalAttribute(attrs, "organization.id"),  // blob4: organization_id
+    assertAttribute(attrs, "user.id"),               // blob5: user_id
+    getOptionalAttribute(attrs, "user.account_uuid"),// blob6: user_account_uuid
+    getOptionalAttribute(attrs, "user.email"),       // blob7: user_email
+    assertAttribute(attrs, "session.id"),            // blob8: session_id
+    getOptionalAttribute(attrs, "terminal.type"),    // blob9: terminal_type
     // blob10-20: specific or reserved
   ];
 }

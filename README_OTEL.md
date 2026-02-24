@@ -39,12 +39,12 @@ You can query the collected data in the Cloudflare Console (Analytics Engine Stu
 - `blob1`: `metric_type` (`session_count`, `cost_usage`, etc.)
 - `blob2`: `service.name` (e.g. `claude-code`)
 - `blob3`: `service.version` (e.g. `1.0.48`)
-- `blob4`: `organization.id` (UUID)
+- `blob4`: `organization.id` (UUID, optional)
 - `blob5`: `user.id` (hashed user ID)
-- `blob6`: `user.account_uuid` (UUID)
-- `blob7`: `user.email` (email address)
+- `blob6`: `user.account_uuid` (UUID, optional)
+- `blob7`: `user.email` (email address, optional)
 - `blob8`: `session.id` (UUID)
-- `blob9`: `terminal.type` (e.g. `iTerm`)
+- `blob9`: `terminal.type` (e.g. `iTerm`, optional)
 - `blob10+`: Metric-specific attributes
 
 **Doubles:**
