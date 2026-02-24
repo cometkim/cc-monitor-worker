@@ -73,12 +73,12 @@ app.post("/v1/metrics", auth, async (c) => {
         c.env.OTEL_METRICS.writeDataPoint(dataPoint);
         writtenDataPoints++;
       } catch (error) {
-        console.error("Failed to write data point: ", error, dataPoint);
+        console.error("Failed to write data point", error, dataPoint);
         rejectedDataPoints++;
       }
     }
 
-    console.log(`Processed ${analyticsDataPoints.length} data points: ${writtenDataPoints} written, ${rejectedDataPoints} rejected`);
+    console.debug(`Processed ${analyticsDataPoints.length} data points: ${writtenDataPoints} written, ${rejectedDataPoints} rejected`);
 
     // Return successful response
     const response: ExportMetricsServiceResponse = rejectedDataPoints > 0 ? {
@@ -105,13 +105,19 @@ app.post("/v1/metrics", auth, async (c) => {
 app.all("/proxy/*", proxyAuth, async (c) => {
   try {
     const response = await proxyRequest(c, (points) => {
-      for (const point of points) {
+      let writtenDataPoints = 0;
+      let rejectedDataPoints = 0;
+      for (const dataPoint of points) {
         try {
-          c.env.PROXY_METRICS.writeDataPoint(point);
+          c.env.PROXY_METRICS.writeDataPoint(dataPoint);
+          writtenDataPoints++;
         } catch (error) {
-          console.error("Failed to write proxy metrics", error);
+          console.error("Failed to write data point", error, dataPoint);
+          rejectedDataPoints++;
         }
       }
+
+      console.debug(`Processed ${points.length} data points: ${writtenDataPoints} written, ${rejectedDataPoints} rejected`);
     });
     return response;
   } catch (error) {
