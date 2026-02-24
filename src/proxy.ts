@@ -3,35 +3,40 @@ import type { AnthropicRequest, AnthropicResponse, AnthropicStreamingEvent, Anth
 
 const ANTHROPIC_API_BASE = new URL("https://api.anthropic.com");
 
-interface ModelPrice {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite_5m: number;
-  cacheWrite_1h: number;
-}
+/**
+ * @see https://platform.claude.com/docs/en/api/service-tiers
+ */
+const CostMultiplier = {
+  Cache_Read: 0.1,
+  Cache_Write_5m: 1.25,
+  Cache_Write_1h: 2,
+  Long_Context_Input: 2,
+  Long_Context_Output: 1.5,
+  Batch: 0.5,
+  US_Only: 1.1,
+} as const;
 
-const MODEL_PRICES: [prefix: string, price: ModelPrice][] = [
+const MODEL_PRICES: [prefix: string, price: { input: number, output: number }][] = [
   // Haiku Series
-  ["claude-haiku-4-5", { input: 1, output: 5, cacheRead: 0.1, cacheWrite_5m: 1.25, cacheWrite_1h: 2 }],
-  ["claude-3-5-haiku", { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite_5m: 1, cacheWrite_1h: 1.6 }],
-  ["claude-3-haiku", { input: 0.25, output: 1.25, cacheRead: 0.03, cacheWrite_5m: 0.3, cacheWrite_1h: 0.5 }],
+  ["claude-haiku-4-5",  { input: 1, output: 5 }],
+  ["claude-3-5-haiku",  { input: 0.8, output: 4 }],
+  ["claude-3-haiku",    { input: 0.25, output: 1.25 }],
 
   // Sonnet Series
-  ["claude-sonnet-4-6", { input: 3, output: 15, cacheRead: 0.3, cacheWrite_5m: 3.75, cacheWrite_1h: 6 }],
-  ["claude-sonnet-4-5", { input: 3, output: 15, cacheRead: 0.3, cacheWrite_5m: 3.75, cacheWrite_1h: 6 }],
-  ["claude-sonnet-4-0", { input: 3, output: 15, cacheRead: 0.3, cacheWrite_5m: 3.75, cacheWrite_1h: 6 }],
-  ["claude-sonnet-4", { input: 3, output: 15, cacheRead: 0.3, cacheWrite_5m: 3.75, cacheWrite_1h: 6 }],
-  ["claude-3-7-sonnet", { input: 3, output: 15, cacheRead: 0.3, cacheWrite_5m: 3.75, cacheWrite_1h: 6 }],
-  ["claude-3-5-sonnet", { input: 3, output: 15, cacheRead: 0.3, cacheWrite_5m: 3.75, cacheWrite_1h: 6 }],
+  ["claude-sonnet-4-6", { input: 3, output: 15 }],
+  ["claude-sonnet-4-5", { input: 3, output: 15 }],
+  ["claude-sonnet-4-0", { input: 3, output: 15 }],
+  ["claude-sonnet-4",   { input: 3, output: 15 }],
+  ["claude-3-7-sonnet", { input: 3, output: 15 }],
+  ["claude-3-5-sonnet", { input: 3, output: 15 }],
 
   // Opus Series
-  ["claude-opus-4-6", { input: 5, output: 25, cacheRead: 0.5, cacheWrite_5m: 6.25, cacheWrite_1h: 10 }],
-  ["claude-opus-4-5", { input: 5, output: 25, cacheRead: 0.5, cacheWrite_5m: 6.25, cacheWrite_1h: 10 }],
-  ["claude-opus-4-1", { input: 15, output: 75, cacheRead: 1.5, cacheWrite_5m: 18.75, cacheWrite_1h: 30 }],
-  ["claude-opus-4-0", { input: 15, output: 75, cacheRead: 1.5, cacheWrite_5m: 18.75, cacheWrite_1h: 30 }],
-  ["claude-opus-4", { input: 15, output: 75, cacheRead: 1.5, cacheWrite_5m: 18.75, cacheWrite_1h: 30 }],
-  ["claude-3-opus", { input: 15, output: 75, cacheRead: 1.5, cacheWrite_5m: 18.75, cacheWrite_1h: 30 }],
+  ["claude-opus-4-6",   { input: 5, output: 25 }],
+  ["claude-opus-4-5",   { input: 5, output: 25 }],
+  ["claude-opus-4-1",   { input: 15, output: 75 }],
+  ["claude-opus-4-0",   { input: 15, output: 75 }],
+  ["claude-opus-4",     { input: 15, output: 75 }],
+  ["claude-3-opus",     { input: 15, output: 75 }],
 ];
 
 function getModelPrice(model: string) {
@@ -381,39 +386,67 @@ export function metricsToDataPoints(metrics: ProxyMetrics): AnalyticsEngineDataP
     ),
   );
 
-  points.push(
-    createDataPoint(
-      "token_usage",
-      usage.input_tokens,
-      timestampMs,
-      { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "input" },
-    ),
-  );
-  price && points.push(
-    createDataPoint(
-      "cost_usage",
-      (usage.input_tokens / 1_000_000) * price.input,
-      timestampMs,
-      { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "input" },
-    ),
-  );
+  if (usage.input_tokens) {
+    points.push(
+      createDataPoint(
+        "token_usage",
+        usage.input_tokens,
+        timestampMs,
+        { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "input" },
+      ),
+    );
+    if (price) {
+      let cost = (usage.input_tokens / 1_000_000) * price.input;
+      if (usage.input_tokens > 200_000) {
+        cost *= CostMultiplier.Long_Context_Input;
+      }
+      if (usage.service_tier === "batch") {
+        cost *= CostMultiplier.Batch;
+      }
+      if (usage.inference_geo === "us") {
+        cost *= CostMultiplier.US_Only;
+      }
+      points.push(
+        createDataPoint(
+          "cost_usage",
+          cost,
+          timestampMs,
+          { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "input" },
+        ),
+      );
+    }
+  }
 
-  points.push(
-    createDataPoint(
-      "token_usage",
-      usage.output_tokens,
-      timestampMs,
-      { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "output" },
-    ),
-  );
-  price && points.push(
-    createDataPoint(
-      "cost_usage",
-      (usage.output_tokens / 1_000_000) * price.output,
-      timestampMs,
-      { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "output" },
-    ),
-  );
+  if (usage.output_tokens) {
+    points.push(
+      createDataPoint(
+        "token_usage",
+        usage.output_tokens,
+        timestampMs,
+        { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "output" },
+      ),
+    );
+    if (price) {
+      let cost = usage.output_tokens / 1_000_000 * price.output;
+      if (usage.output_tokens > 200_000) {
+        cost *= CostMultiplier.Long_Context_Output;
+      }
+      if (usage.service_tier === "batch") {
+        cost *= CostMultiplier.Batch;
+      }
+      if (usage.inference_geo === "us") {
+        cost *= CostMultiplier.US_Only;
+      }
+      points.push(
+        createDataPoint(
+          "cost_usage",
+          cost,
+          timestampMs,
+          { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "output" },
+        ),
+      );
+    }
+  }
 
   if (usage.cache_read_input_tokens) {
     points.push(
@@ -424,14 +457,26 @@ export function metricsToDataPoints(metrics: ProxyMetrics): AnalyticsEngineDataP
         { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_read" },
       )
     );
-    price && points.push(
-      createDataPoint(
-        "cost_usage",
-        (usage.cache_read_input_tokens / 1_000_000) * price.cacheRead,
-        timestampMs,
-        { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_read" },
-      )
-    );
+    if (price) {
+      let cost = (usage.cache_read_input_tokens / 1_000_000) * price.input * CostMultiplier.Cache_Read;
+      if (usage.cache_read_input_tokens > 200_000) {
+        cost *= CostMultiplier.Long_Context_Input;
+      }
+      if (usage.service_tier === "batch") {
+        cost *= CostMultiplier.Batch;
+      }
+      if (usage.inference_geo === "us") {
+        cost *= CostMultiplier.US_Only;
+      }
+      points.push(
+        createDataPoint(
+          "cost_usage",
+          cost,
+          timestampMs,
+          { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_read" },
+        )
+      );
+    }
   }
 
   if (usage.cache_creation) {
@@ -444,14 +489,26 @@ export function metricsToDataPoints(metrics: ProxyMetrics): AnalyticsEngineDataP
           { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation_5m" },
         )
       );
-      price && points.push(
-        createDataPoint(
-          "cost_usage",
-          (usage.cache_creation.ephemeral_5m_input_tokens / 1_000_000) * price.cacheWrite_5m,
-          timestampMs,
-          { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation_5m" },
-        )
-      );
+      if (price) {
+        let cost = (usage.cache_creation.ephemeral_5m_input_tokens / 1_000_000) * price.input * CostMultiplier.Cache_Write_5m;
+        if (usage.cache_creation.ephemeral_5m_input_tokens > 200_000) {
+          cost *= CostMultiplier.Long_Context_Input;
+        }
+        if (usage.service_tier === "batch") {
+          cost *= CostMultiplier.Batch;
+        }
+        if (usage.inference_geo === "us") {
+          cost *= CostMultiplier.US_Only;
+        }
+        points.push(
+          createDataPoint(
+            "cost_usage",
+            cost,
+            timestampMs,
+            { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation_5m" },
+          )
+        );
+      }
     }
     if (usage.cache_creation.ephemeral_1h_input_tokens) {
       points.push(
@@ -462,14 +519,26 @@ export function metricsToDataPoints(metrics: ProxyMetrics): AnalyticsEngineDataP
           { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation_1h" },
         )
       );
-      price && points.push(
-        createDataPoint(
-          "cost_usage",
-          (usage.cache_creation.ephemeral_1h_input_tokens / 1_000_000) * price.cacheWrite_1h,
-          timestampMs,
-          { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation_1h" },
-        )
-      );
+      if (price) {
+        let cost = (usage.cache_creation.ephemeral_1h_input_tokens / 1_000_000) * price.input * CostMultiplier.Cache_Write_1h;
+        if (usage.cache_creation.ephemeral_1h_input_tokens > 200_000) {
+          cost *= CostMultiplier.Long_Context_Input;
+        }
+        if (usage.service_tier === "batch") {
+          cost *= CostMultiplier.Batch;
+        }
+        if (usage.inference_geo === "us") {
+          cost *= CostMultiplier.US_Only;
+        }
+        points.push(
+          createDataPoint(
+            "cost_usage",
+            cost,
+            timestampMs,
+            { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation_1h" },
+          )
+        );
+      }
     }
   } else if (usage.cache_creation_input_tokens) {
     points.push(
@@ -480,14 +549,26 @@ export function metricsToDataPoints(metrics: ProxyMetrics): AnalyticsEngineDataP
         { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation_5m" },
       )
     );
-    price && points.push(
-      createDataPoint(
-        "cost_usage",
-        (usage.cache_creation_input_tokens / 1_000_000) * price.cacheWrite_5m,
-        timestampMs,
-        { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation_5m" },
-      )
-    );
+    if (price) {
+      let cost = (usage.cache_creation_input_tokens / 1_000_000) * price.input * CostMultiplier.Cache_Write_5m;
+      if (usage.cache_creation_input_tokens > 200_000) {
+        cost *= CostMultiplier.Long_Context_Input;
+      }
+      if (usage.service_tier === "batch") {
+        cost *= CostMultiplier.Batch;
+      }
+      if (usage.inference_geo === "us") {
+        cost *= CostMultiplier.US_Only;
+      }
+      points.push(
+        createDataPoint(
+          "cost_usage",
+          cost,
+          timestampMs,
+          { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation_5m" },
+        )
+      );
+    }
   }
 
   return points;

@@ -4,6 +4,8 @@ export interface AnthropicUsage {
   cache_read_input_tokens?: number;
   cache_creation_input_tokens?: number;
   cache_creation?: AnthropicUsageCacheCreation;
+  service_tier?: "standard" | "priority" | "batch";
+  inference_geo?: "not_available" | "us";
 }
 
 export interface AnthropicUsageCacheCreation {
