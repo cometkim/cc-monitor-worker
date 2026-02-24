@@ -3,7 +3,10 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-02-23",
   "observability": {
-    "enabled": true
+    "enabled": true,
+    "traces": {
+      "enabled": true
+    }
   },
   "analytics_engine_datasets": [
     {
