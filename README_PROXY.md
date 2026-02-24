@@ -53,7 +53,7 @@ The endpoint processes the following Claude Code metrics:
 | `api_request` | Processed API request |  |
 | `api_latency_ms` | API latency |  |
 | `token_usage` | Token consumption | `blob10` (model), `blob11` (token_type) |
-| `cost_usage` | Usage costs in USD | `blob10` (model) |
+| `cost_usage` | Usage costs in USD | `blob10` (model), `blob11` (token_type) |
 
 
 ### Example Analytics Engine Query

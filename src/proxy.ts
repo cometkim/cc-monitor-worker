@@ -11,18 +11,25 @@ interface ModelPrice {
 }
 
 const MODEL_PRICES: [prefix: string, price: ModelPrice][] = [
-  ["claude-opus-4-6", { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }],
-  ["claude-opus-4-5", { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }],
-  ["claude-opus-4-0", { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 }],
+  // Haiku Series
   ["claude-haiku-4-5", { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 }],
   ["claude-3-5-haiku", { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 }],
   ["claude-3-haiku", { input: 0.25, output: 1.25, cacheRead: 0.03, cacheWrite: 0.3 }],
+
+  // Sonnet Series
   ["claude-sonnet-4-6", { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }],
   ["claude-sonnet-4-5", { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }],
   ["claude-sonnet-4-0", { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }],
+  ["claude-sonnet-4", { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }],
   ["claude-3-7-sonnet", { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }],
   ["claude-3-5-sonnet", { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }],
-  ["claude-3-sonnet", { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 0.3 }],
+
+  // Opus Series
+  ["claude-opus-4-6", { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }],
+  ["claude-opus-4-5", { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }],
+  ["claude-opus-4-1", { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 }],
+  ["claude-opus-4-0", { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 }],
+  ["claude-opus-4", { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 }],
   ["claude-3-opus", { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 }],
 ];
 
@@ -343,6 +350,11 @@ export function metricsToDataPoints(metrics: ProxyMetrics): AnalyticsEngineDataP
   const timestampMs = Date.now();
   const { requestId, model, usage, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId } = metrics;
 
+  const price = getModelPrice(model);
+  if (!price) {
+    console.warn("No price information found for model: %s", model);
+  }
+
   points.push(
     createDataPoint(
       "api_request",
@@ -369,11 +381,27 @@ export function metricsToDataPoints(metrics: ProxyMetrics): AnalyticsEngineDataP
       { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "input" },
     ),
   );
+  price && points.push(
+    createDataPoint(
+      "cost_usage",
+      (usage.input_tokens / 1_000_000) * price.input,
+      timestampMs,
+      { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "input" },
+    ),
+  );
 
   points.push(
     createDataPoint(
       "token_usage",
       usage.output_tokens,
+      timestampMs,
+      { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "output" },
+    ),
+  );
+  price && points.push(
+    createDataPoint(
+      "cost_usage",
+      (usage.output_tokens / 1_000_000) * price.output,
       timestampMs,
       { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "output" },
     ),
@@ -384,6 +412,14 @@ export function metricsToDataPoints(metrics: ProxyMetrics): AnalyticsEngineDataP
       createDataPoint(
         "token_usage",
         usage.cache_read_input_tokens,
+        timestampMs,
+        { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_read" },
+      )
+    );
+    price && points.push(
+      createDataPoint(
+        "cost_usage",
+        (usage.cache_read_input_tokens / 1_000_000) * price.cacheRead,
         timestampMs,
         { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_read" },
       )
@@ -399,33 +435,14 @@ export function metricsToDataPoints(metrics: ProxyMetrics): AnalyticsEngineDataP
         { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation" },
       )
     );
-  }
-
-  const price = getModelPrice(model);
-  if (price) {
-    let totalCost = 0;
-
-    totalCost += (usage.input_tokens / 1_000_000) * price.input;
-    totalCost += (usage.output_tokens / 1_000_000) * price.output;
-
-    if (usage.cache_read_input_tokens) {
-      totalCost += (usage.cache_read_input_tokens / 1_000_000) * price.cacheRead;
-    }
-
-    if (usage.cache_creation_input_tokens) {
-      totalCost += (usage.cache_creation_input_tokens / 1_000_000) * price.cacheWrite;
-    }
-
-    points.push(
+    price && points.push(
       createDataPoint(
         "cost_usage",
-        totalCost,
+        (usage.cache_creation_input_tokens / 1_000_000) * price.cacheWrite,
         timestampMs,
-        { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId },
+        { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation" },
       )
     );
-  } else {
-    console.warn("No price information found for model: %s", model);
   }
 
   return points;
