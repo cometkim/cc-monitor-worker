@@ -517,9 +517,6 @@ export function metricsToDataPoints(metrics: ProxyMetrics): AnalyticsEngineDataP
         if (isLongContext) {
           cost *= CostMultiplier.Long_Context_Input;
         }
-        if (usage.service_tier === "batch") {
-          cost *= CostMultiplier.Batch;
-        }
         if (usage.inference_geo === "us") {
           cost *= CostMultiplier.US_Only;
         }
@@ -546,9 +543,6 @@ export function metricsToDataPoints(metrics: ProxyMetrics): AnalyticsEngineDataP
       let cost = (usage.cache_creation_input_tokens / 1_000_000) * price.input * CostMultiplier.Cache_Write_5m;
       if (isLongContext) {
         cost *= CostMultiplier.Long_Context_Input;
-      }
-      if (usage.service_tier === "batch") {
-        cost *= CostMultiplier.Batch;
       }
       if (usage.inference_geo === "us") {
         cost *= CostMultiplier.US_Only;
