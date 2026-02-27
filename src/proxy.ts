@@ -673,7 +673,11 @@ export async function proxyRequest(
 
   const response = await fetch(proxyRequest);
 
-  if (targetUrl.pathname === "/v1/messages") {
+  // TODO: Add failure metrics, upstream error tracking, etc.
+  //
+  // Bypass error responses for now.
+  //
+  if (response.ok && targetUrl.pathname === "/v1/messages") {
     const isStreaming = response.headers.get("content-type")?.includes("text/event-stream");
     return isStreaming
       ? handleStreamingResponse(response, startTime, writeMetrics, contextPromise, ctx.executionCtx)
