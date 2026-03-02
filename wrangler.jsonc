@@ -3,7 +3,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-02-23",
   "placement": {
-    "host": "api.anthropic.com:443"
+    "region": "aws:us-west-1"
   },
   "observability": {
     "enabled": true,
