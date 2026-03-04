@@ -599,30 +599,23 @@ async function handleStreamingResponse(
     return response;
   }
 
+  const context = await contextPromise;
+
   const [passthrough, metricsStream] = response.body.tee();
 
-  const metricsPipeline = (async () => {
-    try {
-      const context = await contextPromise;
-      
-      await metricsStream
-        .pipeThrough(new TextDecoderStream())
-        .pipeThrough(new LineSplitTransform())
-        .pipeThrough(new SSEParserTransform())
-        .pipeThrough(new SSEMetricsTransform(startTime, writeMetrics, context))
-        .getReader()
-        .read();
-    } catch (error) {
+  const metricsPipeline = metricsStream
+    .pipeThrough(new TextDecoderStream())
+    .pipeThrough(new LineSplitTransform())
+    .pipeThrough(new SSEParserTransform())
+    .pipeThrough(new SSEMetricsTransform(startTime, writeMetrics, context))
+    .pipeTo(new WritableStream())
+    .catch(error => {
       console.error("Metrics pipeline error:", error);
-    }
-  })();
+    });
 
   ctx.waitUntil(metricsPipeline);
 
-  return new Response(passthrough, {
-    status: response.status,
-    headers: response.headers,
-  });
+  return new Response(passthrough, response);
 }
 
 async function handleNonStreamingResponse(
