@@ -599,45 +599,27 @@ async function handleStreamingResponse(
     return response;
   }
 
-  const context = await contextPromise;
+  const [passthrough, metricsStream] = response.body.tee();
 
-  const [clientBranch, metricsBranch] = response.body.tee();
-
-  // TODO: optimize pipeline for less pressure
-  const metricsPipeline = metricsBranch
-    .pipeThrough(new TextDecoderStream())
-    .pipeThrough(new LineSplitTransform())
-    .pipeThrough(new SSEParserTransform())
-    .pipeThrough(new SSEMetricsTransform(startTime, writeMetrics, context))
-    .pipeTo(new WritableStream({ write() {} }))
-    .catch(error => {
+  const metricsPipeline = (async () => {
+    try {
+      const context = await contextPromise;
+      
+      await metricsStream
+        .pipeThrough(new TextDecoderStream())
+        .pipeThrough(new LineSplitTransform())
+        .pipeThrough(new SSEParserTransform())
+        .pipeThrough(new SSEMetricsTransform(startTime, writeMetrics, context))
+        .getReader()
+        .read();
+    } catch (error) {
       console.error("Metrics pipeline error:", error);
-    });
+    }
+  })();
 
   ctx.waitUntil(metricsPipeline);
 
-  // JS pump to avoid runtime passthrough optimization
-  // See https://stackoverflow.com/questions/75243797/in-a-cloudflare-worker-why-the-faster-stream-waits-the-slower-one-when-using-the
-  const { readable, writable } = new TransformStream();
-  const writer = writable.getWriter();
-  const reader = clientBranch.getReader();
-
-  const pump = async () => {
-    try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-
-        await writer.write(value);
-      }
-    } finally {
-      writer.close();
-    }
-  };
-
-  pump();
-
-  return new Response(readable, {
+  return new Response(passthrough, {
     status: response.status,
     headers: response.headers,
   });
@@ -690,14 +672,6 @@ export async function proxyRequest(
   });
 
   const response = await fetch(proxyRequest);
-  if (response.status === 403) {
-    console.error(`403 Forbidden by Anthropic API for `, {
-      pathname: targetUrl.pathname,
-      status: response.status,
-      statusText: response.statusText,
-      subrequestMeta: proxyRequest.cf,
-    });
-  }
 
   // TODO: Add failure metrics, upstream error tracking, etc.
   //
