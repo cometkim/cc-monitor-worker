@@ -1,0 +1,34 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "cc-monitor",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-02-23",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "cc-monitor.krrt.io",
+      "zone_name": "krrt.io",
+      "custom_domain": true
+    }
+  ],
+  "placement": {
+    "region": "aws:us-west-1"
+  },
+  "observability": {
+    "enabled": true,
+    "traces": {
+      "enabled": true
+    }
+  },
+  "analytics_engine_datasets": [
+    {
+      "binding": "OTEL_METRICS",
+      "dataset": "claude_code_metrics_v20250717"
+    },
+    {
+      "binding": "PROXY_METRICS",
+      "dataset": "claude_proxy_metrics_v20260223"
+    }
+  ]
+}

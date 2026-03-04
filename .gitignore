@@ -1,4 +1,2 @@
 node_modules/
 .wrangler/
-
-/wrangler.deployment.jsonc
