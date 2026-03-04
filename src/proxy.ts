@@ -1,5 +1,6 @@
 import type { Context, ExecutionContext } from "hono";
 import type { AnthropicRequest, AnthropicResponse, AnthropicStreamingEvent, AnthropicUsage } from "./types/anthropic.ts";
+import { parseUserMetadata, parseUserAgent } from "./claude/metadata.ts";
 
 const ANTHROPIC_API_BASE = new URL("https://api.anthropic.com");
 
@@ -226,35 +227,6 @@ interface ProxyMetrics {
   sessionId?: string;
 }
 
-function parseUserAgent(userAgent: string): { serviceName: string; serviceVersion: string } {
-  const match = userAgent.match(/^([^/]+)\/([^\s(]+)/);
-  
-  if (match) {
-    return { serviceName: match[1], serviceVersion: match[2] };
-  }
-  
-  return { serviceName: userAgent.split("/")[0] || "unknown", serviceVersion: "" };
-}
-
-function parseClaudeCodeUserId(userIdField: string): { userId: string; accountId: string; sessionId: string } | null {
-  const parts = userIdField.split("_");
-  if (parts.length < 6) return null;
-
-  const userIdIdx = parts.indexOf("user");
-  const accountIdx = parts.indexOf("account");
-  const sessionIdx = parts.indexOf("session");
-
-  if (userIdIdx === -1 || accountIdx === -1 || sessionIdx === -1) return null;
-
-  const userId = parts[userIdIdx + 1];
-  const accountId = parts[accountIdx + 1];
-  const sessionId = parts[sessionIdx + 1];
-
-  if (!userId || !accountId || !sessionId) return null;
-
-  return { userId, accountId, sessionId };
-}
-
 export function createDataPoint(
   metricType: string,
   value: number,
@@ -294,7 +266,7 @@ export function extractMetricsFromResponse(
   latencyMs: number,
   context?: RequestContext
 ): ProxyMetrics {
-  const { serviceName, serviceVersion } = parseUserAgent(context?.userAgent || "");
+  const { name: serviceName, version: serviceVersion } = parseUserAgent(context?.userAgent || "");
   
   return {
     requestId: response.id,
@@ -336,7 +308,7 @@ export function extractMetricsFromStreamingResponse(
       usage.output_tokens = event.usage.output_tokens;
     }
     if (event.type === "message_stop" && usage) {
-      const { serviceName, serviceVersion } = parseUserAgent(context?.userAgent || "");
+      const { name: serviceName, version: serviceVersion } = parseUserAgent(context?.userAgent || "");
       
       return {
         requestId,
@@ -573,11 +545,11 @@ async function extractRequestContext(req: Request): Promise<RequestContext> {
       const parsed = await cloned.json<AnthropicRequest>();
       const userIdField = parsed.metadata?.user_id;
       if (userIdField) {
-        const parsedIds = parseClaudeCodeUserId(userIdField);
-        if (parsedIds) {
-          context.userId = parsedIds.userId;
-          context.userAccountId = parsedIds.accountId;
-          context.sessionId = parsedIds.sessionId;
+        const metadata = parseUserMetadata(parsed.metadata || {});
+        if (metadata) {
+          context.userId = metadata.userId;
+          context.userAccountId = metadata.userAccountId;
+          context.sessionId = metadata.sessionId;
         }
       }
     }
@@ -613,9 +585,20 @@ async function handleStreamingResponse(
       console.error("Metrics pipeline error:", error);
     });
 
+
   ctx.waitUntil(metricsPipeline);
 
-  return new Response(passthrough, response);
+  const { readable, writable } = new TransformStream();
+  passthrough.pipeTo(writable).catch(() => {});
+
+  const headers = new Headers(response.headers);
+  headers.delete("content-encoding");
+  headers.delete("content-length");
+
+  return new Response(readable, {
+    status: response.status,
+    headers,
+  });
 }
 
 async function handleNonStreamingResponse(
