@@ -645,6 +645,9 @@ export async function proxyRequest(
     body: req.body,
     headers: proxyHeaders,
     redirect: "follow",
+
+    // forward abort signal
+    signal: req.signal,
   });
 
   const response = await fetch(proxyRequest);
