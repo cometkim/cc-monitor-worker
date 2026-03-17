@@ -3,6 +3,9 @@
   "name": "cc-monitor",
   "main": "src/index.ts",
   "compatibility_date": "2026-02-23",
+  "compatibility_flags": [
+    "enable_request_signal",
+  ],
   "workers_dev": false,
   "preview_urls": false,
   "routes": [
@@ -17,9 +20,6 @@
   },
   "observability": {
     "enabled": true,
-    "traces": {
-      "enabled": true
-    }
   },
   "analytics_engine_datasets": [
     {
@@ -28,7 +28,8 @@
     },
     {
       "binding": "PROXY_METRICS",
-      "dataset": "claude_proxy_metrics_v20260223"
-    }
-  ]
+      "dataset": "claude_proxy_metrics_v20260316",
+    },
+  ],
+  "upload_source_maps": true,
 }
