@@ -9,6 +9,8 @@ export type NormalizedUsage = (
 );
 
 type NormalizedUsagePayload = {
+  startAt: Date,
+
   messageId: string,
 
   model: string,
@@ -51,9 +53,14 @@ export type NormalizedUsage_EndTurn = NormalizedUsagePayload & {
    * Finalized output token usage is only available when the turn is completed.
    */
   outputTokens: number;
+
+  // For throughput analytics
+  // It requires a timer that actually progresses in time.
+  endAt: Date,
+  tps: number;
 }
 
-export function normalizeUsage({ id, model, usage }: Message): NormalizedUsage_Start {
+export function normalizeUsage({ id, model, usage }: Message, startAt: Date): NormalizedUsage_Start {
   const inputTokens = usage.input_tokens;
   const cacheRead = usage.cache_read_input_tokens ?? 0;
   const cacheCreation_5m = usage.cache_creation?.ephemeral_5m_input_tokens ?? 0;
@@ -73,6 +80,7 @@ export function normalizeUsage({ id, model, usage }: Message): NormalizedUsage_S
 
   return {
     state: "start",
+    startAt,
     messageId: id,
     model,
     inferenceGeo,
@@ -92,12 +100,33 @@ export function normalizeUsage({ id, model, usage }: Message): NormalizedUsage_S
 export function normalizeEndTurnUsage(
   usage: NormalizedUsage,
   event: RawMessageDeltaEvent,
+  endAt: Date,
 ): NormalizedUsage_EndTurn {
+  const outputTokens = event.usage.output_tokens;
+  const elapsed = endAt.getTime() - usage.startAt.getTime();
+  const tps = outputTokens / elapsed * 1000;
   return {
     ...usage,
     state: "end_turn",
-    outputTokens: event.usage.output_tokens,
+    outputTokens,
+    endAt,
+    tps,
   };
+}
+
+export function forceEndTurnUsage(
+  message: Message,
+  startAt: Date,
+  endAt: Date,
+): NormalizedUsage_EndTurn {
+  const dummyEvent: RawMessageDeltaEvent = {
+    type: "message_delta",
+    delta: { container: null, stop_reason: null, stop_sequence: null },
+    usage: message.usage,
+  };
+  const usageInit = normalizeUsage(message, startAt);
+  const usage = normalizeEndTurnUsage(usageInit, dummyEvent, endAt);
+  return usage;
 }
 
 export interface ModelUnitPrice {

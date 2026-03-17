@@ -89,6 +89,7 @@ Additional attributes:
 - `double4`: Cache creation (5m) input tokens
 - `double5`: Cache creation (1h) input tokens
 - `double6`: Output tokens
+* `double7`: Tokens per second (zero value if not available)
 
 ```sql
 SELECT

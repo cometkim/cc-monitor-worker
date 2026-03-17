@@ -57,6 +57,7 @@ export function api_request(params: MetricParams<"api_request", {
  * - double4: Cache creation (5m) input tokens
  * - double5: Cache creation (1h) input tokens
  * - double6: Output tokens
+ * - double7: Tokens per second (only available when the state is `end_turn`, otherwise zero value)
  */
 export function token_usage(params: MetricParams<"token_usage", {
   usage: NormalizedUsage,
@@ -82,7 +83,8 @@ export function token_usage(params: MetricParams<"token_usage", {
       usage.cacheRead,
       usage.cacheCreation_5m,
       usage.cacheCreation_1h,
-      usage.outputTokens
+      usage.outputTokens,
+      usage.state === "end_turn" ? usage.tps : 0,
     ],
   };
 }

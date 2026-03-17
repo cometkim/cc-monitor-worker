@@ -16,6 +16,8 @@ interface CCRequestContextBase {
    * Not exsiting in the Anthropic's API requests. Should be injected manually.
    */
   organizationId: string | null;
+
+  requestedAt: Date;
 }
 
 export type CCRequestContextForAll = CCRequestContextBase & {
@@ -44,6 +46,7 @@ export async function parseRequest(req: Request): Promise<CCRequestContext> {
     userAgent,
     userEmail,
     organizationId: null,
+    requestedAt: new Date(),
   };
 
   try {

@@ -14,7 +14,8 @@ import {
   calculateCost,
   normalizeUsage,
   normalizeEndTurnUsage,
-  type NormalizedUsage, 
+  forceEndTurnUsage, 
+  type NormalizedUsage,
 } from "./claude/cost.ts";
 import * as schema from "./schema/claude_proxy_metrics_v20260316.ts";
 
@@ -154,12 +155,14 @@ class SSEMetricCollectorStream extends TransformStream<Uint8Array, Uint8Array> {
   #usage: NormalizedUsage | null = null;
 
   #onMessageStartEvent(event: RawMessageStartEvent) {
-    this.#usage = normalizeUsage(event.message);
+    this.#usage = normalizeUsage(event.message, new Date());
   }
 
   #onMessageDeltaEvent(event: RawMessageDeltaEvent) {
+    // Seems the timer is pregressing on the response stream.
+    // Not sure it's a feature or a security bug :shrug:
     if (this.#usage) {
-      this.#usage = normalizeEndTurnUsage(this.#usage, event);
+      this.#usage = normalizeEndTurnUsage(this.#usage, event, new Date());
     }
   }
 
@@ -193,6 +196,7 @@ async function handleStreamingResponse(
       values: { usage },
     }));
     if (usage.state !== "end_turn") {
+      console.warn("An incomplete output usage is detected");
       ctx.env.PROXY_METRICS.writeDataPoint(schema.incomplete_output_usage({
         timestampMs: Date.now(),
         context: requestContext,
@@ -238,7 +242,7 @@ async function handleNonStreamingResponse(
   async function writeMetrics(response: Response) {
     try {
       const message = await response.json<Message>();
-      const usage = normalizeUsage(message);
+      const usage = forceEndTurnUsage(message, requestContext.requestedAt, new Date());
       ctx.env.PROXY_METRICS.writeDataPoint(schema.token_usage({
         timestampMs: Date.now(),
         context: requestContext,
@@ -284,9 +288,6 @@ export async function proxyRequest(
     signal: req.signal,
   });
 
-  const startedAt = performance.now(); // always 0
-
-
   let response: Response | null = null;
   try {
     response = await fetch(proxyRequest);
@@ -298,7 +299,7 @@ export async function proxyRequest(
   }
 
   // timers progress on I/O
-  const latencyMs = performance.now() - startedAt;
+  const latencyMs = Date.now() - requestContext.requestedAt.getTime();
   ctx.env.PROXY_METRICS.writeDataPoint(schema.api_request({
     timestampMs: Date.now(),
     context: requestContext,
