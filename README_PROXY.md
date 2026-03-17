@@ -26,7 +26,7 @@ You can query the collected data in the Cloudflare Console (Analytics Engine Stu
 
 ### Analytics Engine Schema
 
-**Table Name**: `claude_proxy_metrics_v20260223`
+**Table Name**: `claude_proxy_metrics_v20260316`
 
 **Blobs (Fixed Schema):**
 - `blob1`: `metric_type` (`session_count`, `cost_usage`, etc.)
@@ -36,59 +36,140 @@ You can query the collected data in the Cloudflare Console (Analytics Engine Stu
 - `blob5`: `user.id` (hashed user ID)
 - `blob6`: `user.account_uuid` (UUID)
 - `blob7`: `user.email` (email address)
-- `blob8`: `session.id` (UUID)
-- `blob9`: `request_id` (UUID)
-- `blob10+`: Metric-specific attributes
+- `blob8+`: Metric-specific attributes
 
 **Doubles:**
 - `double1`: `timestamp_ms` - Timestamp in milliseconds
-- `double2`: `metric_value` - The actual metric value
+- `double2+`: Metric-specific attributes
 
 ### Supported Metrics
 
-The endpoint processes the following Claude Code metrics:
+The endpoint processes the following metrics:
 
 | Metric Name | Description | Additional Attributes |
 |-------------|-------------|------------|
-| `api_request` | Processed API request |  |
-| `api_latency_ms` | API latency |  |
-| `token_usage` | Token consumption | `blob10` (model), `blob11` (token_type) |
-| `cost_usage` | Usage costs in USD | `blob10` (model), `blob11` (token_type) |
+| `api_request` | Processed API request | url, latency, status |
+| `token_usage` | Token consumption | model, input, output, cache usage |
+| `cost_usage` | Usage costs in USD | calculated cost for usage |
+| `incomplete_output_usage` | When a output usage is not fully collected | message params, metadata |
 
 
-### Example Analytics Engine Query
+See below sections for more details.
+
+#### Metric: `api_request`
+
+Additional attributes:
+
+- `blob8`: [Cloudflare Ray ID]
+- `blob9`: Request URL
+- `double2`: HTTP status code
+- `double3`: Latency in milliseconds
 
 ```sql
-SELECT 
+SELECT
   blob1 as metric_type,
-  blob7 as user_email,
-  SUM(double2) as total_value
+  blob8 as url,
+  double2 as status,
+  double3 as latency_ms
 FROM {{TABLE_NAME}}
-WHERE metric_type = 'cost_usage'
-GROUP BY metric_type, user_email
-ORDER BY total_value DESC
+WHERE metric_type = 'api_request';
 ```
 
-## Architecture
+#### Metric: `token_usage`
+
+Additional attributes:
+
+- `blob8`: [Anthropic Message ID]
+- `blob9`: Model name
+- `blob10`: [Data residency option](https://platform.claude.com/docs/en/about-claude/pricing#data-residency-pricing) (default: `not_available`)
+- `blob11`: Service tier (`standard`, `priority`, or `batch`)
+- `blob12`: [Fast mode option](https://platform.claude.com/docs/en/about-claude/pricing#fast-mode-pricing) (`fast` or null)
+- `double2`: Input tokens
+- `double3`: Cache read input tokens
+- `double4`: Cache creation (5m) input tokens
+- `double5`: Cache creation (1h) input tokens
+- `double6`: Output tokens
+
+```sql
+SELECT
+  blob1 as metric_type,
+  blob8 as message_id,
+  blob9 as model,
+  blob10 as inference_geo,
+  blob11 as service_tier,
+  blob12 as speed,
+  double2 as input_tokens,
+  double3 as cache_read_input_tokens,
+  double4 as cache_creation_5m_input_tokens,
+  double5 as cache_creation_1h_input_tokens,
+  double6 as output_tokens
+FROM {{TABLE_NAME}}
+WHERE metric_type = 'token_usage';
+```
+
+
+#### Metric: `cost_usage`
+
+Additional attributes:
+
+- `blob8`: [Anthropic Message ID]
+- `blob9`: Model name
+- `blob10`: [Data residency option](https://platform.claude.com/docs/en/about-claude/pricing#data-residency-pricing) (default: `not_available`)
+- `blob11`: Service tier (`standard`, `priority`, or `batch`)
+- `blob12`: [Fast mode option](https://platform.claude.com/docs/en/about-claude/pricing#fast-mode-pricing) (`fast` or null)
+- `double2`: Estimated cost for input tokens in USD
+- `double3`: Estimated cost for cache read input tokens in USD
+- `double4`: Estimated cost for cache creation (5m) input tokens in USD
+- `double5`: Estimated cost for cache creation (1h) input tokens in USD
+- `double6`: Estimated cost for output tokens in USD
+
+#### Metric: `incomplete_output_usage`
+
+If a message stream terminates unexpectedly, output token usage may not be collected properly.
+
+This metrics can be used to correct cost estimation.
+
+Additional attributes:
+
+- `blob8`: [Anthropic Message ID]
+- `blob9`: Model name
+- `blob10`: Thinking effort parameter
+- `double2`: Effective input tokens (input + cache usage)
+- `double3`: `max_tokens` parameter
+
+## How it works
+
+The proxy parses the full request body because this is necessary for request control, so some additional latency is unavoidable.
+
+In contrast, the response path is designed to minimize overhead, using non-blocking, zero-copy processing wherever possible.
 
 ```
 Client
-  │  HTTP request (unchanged)
+  │
   ▼
-/proxy ───────────────────────────────▶ Anthropic API
-  │                                      │
-  │                                      │  streaming or normal response
-  │  HTTP response (unchanged)           ▼
-  ◀──────────────────────────────────────┘
+Proxy receives request
   │
-  ├─ (side path, best-effort; never blocks)
-  │    req.body.tee()  → parse user/account/session (optional)
-  │    res.body.tee()  → parse SSE events (if streaming)
-  │                    → write analytics (latency/tokens/cost)
+  ├─ Parse request context
+  ├─ Forward request upstream
+  └─ Record request latency/status
   │
-  └─ if analytics parsing fails: metrics are lost, proxy still succeeds
+  ▼
+Upstream response
+  │
+  ├─ /*
+  │    └─ Bypass response as-is
+  │
+  └─ /v1/messages
+       │
+       ├─ stream=false
+       │    └─ Pass response through to client 
+       │    └─ waitUntil (Read final usage → calculate cost → write metrics)
+       │
+       └─ stream=true (SSE)
+            └─ Pass response through to client 
+               ├─ Observe message_start / message_delta
+               └─ On end/cancel stream → calculate cost → write metrics
 ```
 
-The `/proxy` path is a transparent proxy for the Anthropic API. Requests are passed through unmodified, and so are the responses.
-
-The implementation parses the stream asynchronously, instead of blocking the API request response process. If an analysis error occurs, analytics data will be lost, but existing API requests will not be blocked.
+[Cloudflare Ray ID]: https://developers.cloudflare.com/fundamentals/reference/cloudflare-ray-id/
+[Anthropic Message ID]: https://platform.claude.com/docs/en/api/messages

@@ -62,23 +62,29 @@ app.post("/v1/metrics", auth, async (c) => {
     }
 
     // Convert OTLP metrics to Analytics Engine format
-    const analyticsDataPoints = convertOTLPToAnalytics(metricsRequest);
+    const points = convertOTLPToAnalytics(metricsRequest);
     
     // Write metrics to Analytics Engine
     let writtenDataPoints = 0;
     let rejectedDataPoints = 0;
     
-    for (const dataPoint of analyticsDataPoints) {
+    for (const dataPoint of points) {
       try {
         c.env.OTEL_METRICS.writeDataPoint(dataPoint);
         writtenDataPoints++;
       } catch (error) {
-        console.error("Failed to write data point", error, dataPoint);
+        console.error({
+          message: "Failed to write data point", 
+          cause: error instanceof Error ? error.message : (error as any).toString(), 
+        });
         rejectedDataPoints++;
       }
     }
-
-    console.debug(`Processed ${analyticsDataPoints.length} data points: ${writtenDataPoints} written, ${rejectedDataPoints} rejected`);
+    console.debug({
+      message: `Processed ${points.length} data points: ${writtenDataPoints} written, ${rejectedDataPoints} rejected`,
+      writtenDataPoints,
+      rejectedDataPoints,
+    });
 
     // Return successful response
     const response: ExportMetricsServiceResponse = rejectedDataPoints > 0 ? {
@@ -92,11 +98,14 @@ app.post("/v1/metrics", auth, async (c) => {
       "Content-Type": "application/json",
     });
   } catch (error) {
-    console.error("Error processing metrics:", error);
-    
+    const errorMessage = error instanceof Error ? error.message : (error as any).toString();
+    console.error({
+      message: "Error processing metrics",
+      cause: errorMessage,
+    });
     const errorResponse: Status = {
       code: 13, // INTERNAL
-      message: "Internal server error",
+      message: errorMessage,
     };
     return c.json(errorResponse, 500);
   }
@@ -112,19 +121,29 @@ app.all("/proxy/*", proxyAuth, async (c) => {
           c.env.PROXY_METRICS.writeDataPoint(dataPoint);
           writtenDataPoints++;
         } catch (error) {
-          console.error("Failed to write data point", error, dataPoint);
+          console.error({
+            message: "Failed to write data point", 
+            cause: error instanceof Error ? error.message : (error as any).toString(), 
+          });
           rejectedDataPoints++;
         }
       }
-
-      console.debug(`Processed ${points.length} data points: ${writtenDataPoints} written, ${rejectedDataPoints} rejected`);
+      console.debug({
+        message: `Processed ${points.length} data points: ${writtenDataPoints} written, ${rejectedDataPoints} rejected`,
+        writtenDataPoints,
+        rejectedDataPoints,
+      });
     });
     return response;
   } catch (error) {
-    console.error("Proxy error", error);
+    const errorMessage = error instanceof Error ? error.message : (error as any).toString();
+    console.error({
+      message: "Proxy error",
+      cause: errorMessage,
+    });
     const errorResponse: Status = {
       code: 13,
-      message: error instanceof Error ? error.message : "Proxy error",
+      message: errorMessage,
     };
     return c.json(errorResponse, 502);
   }

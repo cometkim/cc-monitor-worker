@@ -1,595 +1,220 @@
-import type { Context, ExecutionContext } from "hono";
-import type { AnthropicRequest, AnthropicResponse, AnthropicStreamingEvent, AnthropicUsage } from "./types/anthropic.ts";
-import { parseUserMetadata, parseUserAgent } from "./claude/metadata.ts";
+import type {
+  Message,
+  RawMessageStartEvent,
+  RawMessageDeltaEvent,
+} from "@anthropic-ai/sdk/resources";
+import type { Context } from "hono";
 
-const ANTHROPIC_API_BASE = new URL("https://api.anthropic.com");
+import { 
+  parseRequest,
+  type CCRequestContextForMessage,
+} from "./claude/context.ts";
+import { normalizeMessageParams } from "./claude/message.ts";
+import {
+  calculateCost,
+  normalizeUsage,
+  normalizeEndTurnUsage,
+  type NormalizedUsage, 
+} from "./claude/cost.ts";
+import * as schema from "./schema/claude_proxy_metrics_v20260316.ts";
 
 /**
- * @see https://platform.claude.com/docs/en/api/service-tiers
+ * Pass-through stream that collects metrics from the Anthropic's SSE stream.
+ *
+ * Implemented a low-overhead as possible to avoid blocking the response stream.
+ * Zero-copy byte-level parsing in a single pass.
  */
-const CostMultiplier = {
-  Cache_Read: 0.1,
-  Cache_Write_5m: 1.25,
-  Cache_Write_1h: 2,
-  Long_Context_Input: 2,
-  Long_Context_Output: 1.5,
-  US_Only: 1.1,
-} as const;
+class SSEMetricCollectorStream extends TransformStream<Uint8Array, Uint8Array> {
+  #textDecoder = new TextDecoder();
 
-const MODEL_PRICES: [prefix: string, price: { input: number, output: number }][] = [
-  // Haiku Series
-  ["claude-haiku-4-5",  { input: 1, output: 5 }],
-  ["claude-3-5-haiku",  { input: 0.8, output: 4 }],
-  ["claude-3-haiku",    { input: 0.25, output: 1.25 }],
+  #buffer = new Uint8Array(512);
+  #cursor = 0;
 
-  // Sonnet Series
-  ["claude-sonnet-4-6", { input: 3, output: 15 }],
-  ["claude-sonnet-4-5", { input: 3, output: 15 }],
-  ["claude-sonnet-4-0", { input: 3, output: 15 }],
-  ["claude-sonnet-4",   { input: 3, output: 15 }],
-  ["claude-3-7-sonnet", { input: 3, output: 15 }],
-  ["claude-3-5-sonnet", { input: 3, output: 15 }],
+  #eventType = "";
+  #dataView = new Uint8Array(0);
 
-  // Opus Series
-  ["claude-opus-4-6",   { input: 5, output: 25 }],
-  ["claude-opus-4-5",   { input: 5, output: 25 }],
-  ["claude-opus-4-1",   { input: 15, output: 75 }],
-  ["claude-opus-4-0",   { input: 15, output: 75 }],
-  ["claude-opus-4",     { input: 15, output: 75 }],
-  ["claude-3-opus",     { input: 15, output: 75 }],
-];
+  #collect: (usage: NormalizedUsage) => void;
 
-function getModelPrice(model: string) {
-  for (const [prefix, prices] of MODEL_PRICES) {
-    if (model.startsWith(prefix)) {
-      return prices;
-    }
-  }
-  return null;
-}
-
-interface SSEEvent {
-  event: string;
-  data: string;
-  id?: string;
-}
-
-class LineSplitTransform extends TransformStream<string, string> {
-  #buffer = "";
-
-  constructor() {
+  constructor(collect: (usage: NormalizedUsage) => void) {
     super({
       transform: (chunk, controller) => {
-        if (!chunk) return;
-        
-        this.#buffer += chunk;
-        
-        let i = 0;
-        while (i < this.#buffer.length) {
-          const char = this.#buffer[i];
-          
-          if (char === "\r" || char === "\n") {
-            // Emit the line before this line ending
-            const line = this.#buffer.slice(0, i);
-            controller.enqueue(line);
-            
-            // Skip the line ending char
-            i++;
-            
-            // Handle CRLF - skip the LF if we just processed a CR
-            if (char === "\r" && i < this.#buffer.length && this.#buffer[i] === "\n") {
-              i++;
-            }
-            
-            // Remove processed content from buffer
-            this.#buffer = this.#buffer.slice(i);
-            i = 0;
-          } else {
-            i++;
-          }
-        }
-      },
-      flush: (controller) => {
-        if (this.#buffer.length > 0) {
-          controller.enqueue(this.#buffer);
-        }
-      },
-    });
-  }
-}
-
-class SSEParserTransform extends TransformStream<string, SSEEvent> {
-  #event = "";
-  #dataList: string[] = [];
-  #lastEventId = "";
-
-  #dispatchEvent(controller: TransformStreamDefaultController<SSEEvent>) {
-    if (this.#dataList.length > 0) {
-      controller.enqueue({
-        event: this.#event || "message",
-        data: this.#dataList.join("\n"),
-        id: this.#lastEventId || undefined,
-      });
-    }
-    this.#event = "";
-    this.#dataList = [];
-  }
-
-  constructor() {
-    super({
-      transform: (line, controller) => {
-        // Skip empty lines - they dispatch events
-        if (line === "") {
-          this.#dispatchEvent(controller);
-          return;
-        }
-
-        // Skip comments
-        if (line.startsWith(":")) {
-          return;
-        }
-
-        // Parse field
-        const colonPos = line.indexOf(":");
-        let field: string;
-        let value: string;
-
-        if (colonPos === -1) {
-          field = line;
-          value = "";
-        } else {
-          field = line.slice(0, colonPos);
-          value = line.slice(colonPos + 1);
-          // Remove leading space from value if present
-          if (value.startsWith(" ")) {
-            value = value.slice(1);
-          }
-        }
-
-        switch (field) {
-          case "event":
-            this.#event = value;
-            break;
-          case "data":
-            this.#dataList.push(value);
-            break;
-          case "id":
-            if (!value.includes("\0")) {
-              this.#lastEventId = value;
-            }
-            break;
-          case "retry":
-            // Ignore retry field for our use case
-            break;
-        }
-      },
-      flush: (controller) => {
-        this.#dispatchEvent(controller);
-      },
-    });
-  }
-}
-
-interface RequestContext {
-  userId?: string;
-  userAccountId?: string;
-  userEmail?: string;
-  sessionId?: string;
-  userAgent?: string;
-};
-
-class SSEMetricsTransform extends TransformStream<SSEEvent, void> {
-  #events: AnthropicStreamingEvent[] = [];
-  #startTime: number;
-  #writeMetrics: (points: AnalyticsEngineDataPoint[]) => void;
-  #context?: RequestContext;
-
-  constructor(
-    startTime: number,
-    writeMetrics: (points: AnalyticsEngineDataPoint[]) => void,
-    context?: RequestContext
-  ) {
-    super({
-      transform: (sseEvent) => {
         try {
-          const parsed = JSON.parse(sseEvent.data) as AnthropicStreamingEvent;
-          this.#events.push(parsed);
+          if (this.#cursor + chunk.byteLength > this.#buffer.byteLength) {
+            this.#growBuffer(this.#cursor + chunk.byteLength);
+          }
+
+          this.#buffer.set(chunk, this.#cursor);
+          this.#cursor += chunk.byteLength;
+
+          let start = 0;
+          for (let i = 0; i < this.#cursor; i++) {
+            if (this.#buffer[i] !== 10) continue;
+
+            const line = this.#buffer.subarray(start, i);
+            start = i + 1;
+
+            if (
+              line.length > 6 &&
+              line[0] === 101 && // e
+              line[1] === 118 && // v
+              line[2] === 101 && // e
+              line[3] === 110 && // n
+              line[4] === 116 && // t
+              line[5] ===  58    // :
+            ) {
+              this.#eventType = this.#textDecoder.decode(line.subarray(6)).trim();
+              continue;
+            }
+
+            if (
+              line.length > 5 &&
+              line[0] === 100 && // d
+              line[1] ===  97 && // a
+              line[2] === 116 && // t
+              line[3] ===  97 && // a
+              line[4] ===  58    // :
+            ) {
+               this.#dataView = line.subarray(5);
+               continue;
+            }
+
+            /* blank line = event end */
+            if (line.length === 0) {
+              this.#onEvent(this.#eventType, this.#dataView);
+
+              this.#eventType = "";
+              this.#cursor = 0;
+
+              break;
+            }
+          }
         } catch (error) {
-          console.error("Failed to parse SSE event", sseEvent, error);
+          console.error({
+            message: "Error while processing message stream",
+            cause: error instanceof Error ? error.message : (error as any)?.toString(),
+          });
         }
+
+        // Pass-through
+        controller.enqueue(chunk);
       },
+
       flush: () => {
-        const latencyMs = Date.now() - this.#startTime;
-        const metrics = extractMetricsFromStreamingResponse(this.#events, latencyMs, this.#context);
-        if (metrics) {
-          const points = metricsToDataPoints(metrics);
-          this.#writeMetrics(points);
-        }
+        this.#flush();
+      },
+
+      // errored/aborted streaming
+      cancel: (reason) => {
+        console.warn({
+          message: "Stream cancelled",
+          cause: reason instanceof Error ? reason.message : (reason as any)?.toString(),
+        });
+        this.#flush();
       },
     });
-    this.#startTime = startTime;
-    this.#writeMetrics = writeMetrics;
-    this.#context = context;
+
+    this.#collect = collect;
   }
-}
 
-interface ProxyMetrics {
-  requestId: string;
-  model: string;
-  usage: AnthropicUsage;
-  latencyMs: number;
-  isStreaming: boolean;
-  serviceName: string;
-  serviceVersion: string;
-  userId?: string;
-  userAccountId?: string;
-  userEmail?: string;
-  sessionId?: string;
-}
-
-export function createDataPoint(
-  metricType: string,
-  value: number,
-  timestampMs: number,
-  metadata: {
-    requestId: string;
-    model: string;
-    tokenType?: string;
-    serviceName: string;
-    serviceVersion: string;
-    userId?: string;
-    userEmail?: string;
-    userAccountId?: string;
-    sessionId?: string;
-  },
-): AnalyticsEngineDataPoint {
-  return {
-    blobs: [
-      metricType,
-      metadata.serviceName,
-      metadata.serviceVersion,
-      null,
-      metadata.userId || null,
-      metadata.userAccountId || null,
-      metadata.userEmail || null,
-      metadata.sessionId || null,
-      metadata.requestId,
-      metadata.model,
-      metadata.tokenType || null,
-    ],
-    doubles: [timestampMs, value],
-  };
-}
-
-export function extractMetricsFromResponse(
-  response: AnthropicResponse,
-  latencyMs: number,
-  context?: RequestContext
-): ProxyMetrics {
-  const { name: serviceName, version: serviceVersion } = parseUserAgent(context?.userAgent || "");
-  
-  return {
-    requestId: response.id,
-    model: response.model,
-    usage: response.usage,
-    latencyMs,
-    isStreaming: false,
-    serviceName,
-    serviceVersion,
-    userId: context?.userId,
-    userAccountId: context?.userAccountId,
-    userEmail: context?.userEmail,
-    sessionId: context?.sessionId,
-  };
-}
-
-export function extractMetricsFromStreamingResponse(
-  events: AnthropicStreamingEvent[],
-  latencyMs: number,
-  context?: RequestContext
-): ProxyMetrics | null {
-  let requestId = "";
-  let model = "";
-  let usage: AnthropicUsage | null = null;
-
-  for (const event of events) {
-    if (event.type === "message_start" && event.message) {
-      requestId = event.message.id;
-      model = event.message.model;
-
-      // input usage is fixed at here
-      // caching ttl info is only available in message_start
-      usage = event.message.usage;
+  #growBuffer(requiredSize: number) {
+    let newSize = this.#buffer.byteLength * 2;
+    while (requiredSize > newSize) {
+      newSize *= 2;
     }
-    if (event.type === "message_delta" && event.usage) {
-      if (!usage) usage = event.usage;
+    console.log({
+      message: `Growing buffer from ${this.#buffer.byteLength} to ${newSize}`,
+      size: this.#buffer.byteLength,
+      requiredSize,
+      newSize,
+    });
+    const newBuffer = new Uint8Array(newSize);
+    newBuffer.set(this.#buffer);
+    this.#buffer = newBuffer;
+  }
 
-      // output usage need to update to the latest snapshot
-      usage.output_tokens = event.usage.output_tokens;
-    }
-    if (event.type === "message_stop" && usage) {
-      const { name: serviceName, version: serviceVersion } = parseUserAgent(context?.userAgent || "");
-      
-      return {
-        requestId,
-        model,
-        usage,
-        latencyMs,
-        isStreaming: true,
-        serviceName,
-        serviceVersion,
-        userId: context?.userId,
-        userAccountId: context?.userAccountId,
-        userEmail: context?.userEmail,
-        sessionId: context?.sessionId,
-      };
+  #onEvent(eventType: string, buffer: Uint8Array) {
+    // Parse only necessary event and skip for intermidiate events
+    switch (eventType) {
+      case "message_start": {
+        const event = JSON.parse(this.#textDecoder.decode(buffer));
+        this.#onMessageStartEvent(event)
+        break;
+      }
+      case "message_delta": {
+        const event = JSON.parse(this.#textDecoder.decode(buffer));
+        this.#onMessageDeltaEvent(event);
+        break;
+      }
+      default: {
+        break;
+      }
     }
   }
 
-  return null;
-}
+  #usage: NormalizedUsage | null = null;
 
-export function metricsToDataPoints(metrics: ProxyMetrics): AnalyticsEngineDataPoint[] {
-  const points: AnalyticsEngineDataPoint[] = [];
-  const timestampMs = Date.now();
-  const { requestId, model, usage, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId } = metrics;
-
-  const price = getModelPrice(model);
-  if (!price) {
-    console.warn("No price information found for model: %s", model);
+  #onMessageStartEvent(event: RawMessageStartEvent) {
+    this.#usage = normalizeUsage(event.message);
   }
 
-  const effectiveInputContext = usage.input_tokens 
-    + (usage.cache_read_input_tokens || 0)
-    + (usage.cache_creation_input_tokens || 0);
-
-  const isLongContext = effectiveInputContext > 200_000;
-
-  points.push(
-    createDataPoint(
-      "api_request",
-      1,
-      timestampMs,
-      { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId },
-    ),
-  );
-
-  points.push(
-    createDataPoint(
-      "api_latency_ms",
-      metrics.latencyMs,
-      timestampMs,
-      { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId },
-    ),
-  );
-
-  if (usage.input_tokens) {
-    points.push(
-      createDataPoint(
-        "token_usage",
-        usage.input_tokens,
-        timestampMs,
-        { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "input" },
-      ),
-    );
-    if (price) {
-      let cost = (usage.input_tokens / 1_000_000) * price.input;
-      if (isLongContext) {
-        cost *= CostMultiplier.Long_Context_Input;
-      }
-      if (usage.inference_geo === "us") {
-        cost *= CostMultiplier.US_Only;
-      }
-      points.push(
-        createDataPoint(
-          "cost_usage",
-          cost,
-          timestampMs,
-          { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "input" },
-        ),
-      );
+  #onMessageDeltaEvent(event: RawMessageDeltaEvent) {
+    if (this.#usage) {
+      this.#usage = normalizeEndTurnUsage(this.#usage, event);
     }
   }
 
-  if (usage.output_tokens) {
-    points.push(
-      createDataPoint(
-        "token_usage",
-        usage.output_tokens,
-        timestampMs,
-        { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "output" },
-      ),
-    );
-    if (price) {
-      let cost = usage.output_tokens / 1_000_000 * price.output;
-      if (isLongContext) {
-        cost *= CostMultiplier.Long_Context_Output;
-      }
-      if (usage.inference_geo === "us") {
-        cost *= CostMultiplier.US_Only;
-      }
-      points.push(
-        createDataPoint(
-          "cost_usage",
-          cost,
-          timestampMs,
-          { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "output" },
-        ),
-      );
+  #flush() {
+    if (!this.#usage) {
+      console.error("No usage data to write");
+      return;
     }
+
+    // Write once to reduce total count of data points
+    // Splitting data points could make querying simpler, but it amplifies Analytics Engine costs.
+    //
+    // See: https://developers.cloudflare.com/analytics/analytics-engine/pricing/
+    this.#collect(this.#usage);
   }
-
-  if (usage.cache_read_input_tokens) {
-    points.push(
-      createDataPoint(
-        "token_usage",
-        usage.cache_read_input_tokens,
-        timestampMs,
-        { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_read" },
-      )
-    );
-    if (price) {
-      let cost = (usage.cache_read_input_tokens / 1_000_000) * price.input * CostMultiplier.Cache_Read;
-      if (isLongContext) {
-        cost *= CostMultiplier.Long_Context_Input;
-      }
-      if (usage.inference_geo === "us") {
-        cost *= CostMultiplier.US_Only;
-      }
-      points.push(
-        createDataPoint(
-          "cost_usage",
-          cost,
-          timestampMs,
-          { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_read" },
-        )
-      );
-    }
-  }
-
-  if (usage.cache_creation) {
-    if (usage.cache_creation.ephemeral_5m_input_tokens) {
-      points.push(
-        createDataPoint(
-          "token_usage",
-          usage.cache_creation.ephemeral_5m_input_tokens,
-          timestampMs,
-          { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation_5m" },
-        )
-      );
-      if (price) {
-        let cost = (usage.cache_creation.ephemeral_5m_input_tokens / 1_000_000) * price.input * CostMultiplier.Cache_Write_5m;
-        if (isLongContext) {
-          cost *= CostMultiplier.Long_Context_Input;
-        }
-        if (usage.inference_geo === "us") {
-          cost *= CostMultiplier.US_Only;
-        }
-        points.push(
-          createDataPoint(
-            "cost_usage",
-            cost,
-            timestampMs,
-            { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation_5m" },
-          )
-        );
-      }
-    }
-    if (usage.cache_creation.ephemeral_1h_input_tokens) {
-      points.push(
-        createDataPoint(
-          "token_usage",
-          usage.cache_creation.ephemeral_1h_input_tokens,
-          timestampMs,
-          { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation_1h" },
-        )
-      );
-      if (price) {
-        let cost = (usage.cache_creation.ephemeral_1h_input_tokens / 1_000_000) * price.input * CostMultiplier.Cache_Write_1h;
-        if (isLongContext) {
-          cost *= CostMultiplier.Long_Context_Input;
-        }
-        if (usage.inference_geo === "us") {
-          cost *= CostMultiplier.US_Only;
-        }
-        points.push(
-          createDataPoint(
-            "cost_usage",
-            cost,
-            timestampMs,
-            { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation_1h" },
-          )
-        );
-      }
-    }
-  } else if (usage.cache_creation_input_tokens) {
-    points.push(
-      createDataPoint(
-        "token_usage",
-        usage.cache_creation_input_tokens,
-        timestampMs,
-        { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation_5m" },
-      )
-    );
-    if (price) {
-      let cost = (usage.cache_creation_input_tokens / 1_000_000) * price.input * CostMultiplier.Cache_Write_5m;
-      if (isLongContext) {
-        cost *= CostMultiplier.Long_Context_Input;
-      }
-      if (usage.inference_geo === "us") {
-        cost *= CostMultiplier.US_Only;
-      }
-      points.push(
-        createDataPoint(
-          "cost_usage",
-          cost,
-          timestampMs,
-          { requestId, model, serviceName, serviceVersion, userId, userAccountId, userEmail, sessionId, tokenType: "cache_creation_5m" },
-        )
-      );
-    }
-  }
-
-  return points;
-}
-
-async function extractRequestContext(req: Request): Promise<RequestContext> {
-  const userAgent = req.headers.get("user-agent") || undefined;
-  const userEmail = req.headers.get("x-proxy-user-email") || undefined;
-
-  const context: RequestContext = { userAgent, userEmail };
-
-  try {
-    if (req.body) {
-      const cloned = req.clone(); // tee-ing body stream
-      const parsed = await cloned.json<AnthropicRequest>();
-      const userIdField = parsed.metadata?.user_id;
-      if (userIdField) {
-        const metadata = parseUserMetadata(parsed.metadata || {});
-        if (metadata) {
-          context.userId = metadata.userId;
-          context.userAccountId = metadata.userAccountId;
-          context.sessionId = metadata.sessionId;
-        }
-      }
-    }
-  } catch (error) {
-    console.error("Failed to parse request body for extracting extra metadata", error);
-  }
-
-  return context;
 }
 
 async function handleStreamingResponse(
   response: Response,
-  startTime: number,
-  writeMetrics: (points: AnalyticsEngineDataPoint[]) => void,
-  contextPromise: Promise<RequestContext>,
-  ctx: ExecutionContext
+  requestContext: CCRequestContextForMessage,
+  ctx: Context<{ Bindings: Cloudflare.Env }>,
 ): Promise<Response> {
   if (!response.body) {
     return response;
   }
 
-  const context = await contextPromise;
-
-  const [passthrough, metricsStream] = response.body.tee();
-
-  const metricsPipeline = metricsStream
-    .pipeThrough(new TextDecoderStream())
-    .pipeThrough(new LineSplitTransform())
-    .pipeThrough(new SSEParserTransform())
-    .pipeThrough(new SSEMetricsTransform(startTime, writeMetrics, context))
-    .pipeTo(new WritableStream())
-    .catch(error => {
-      console.error("Metrics pipeline error:", error);
+  const { readable, writable } = new SSEMetricCollectorStream(usage => {
+    ctx.env.PROXY_METRICS.writeDataPoint(schema.token_usage({
+      timestampMs: Date.now(),
+      context: requestContext,
+      values: { usage },
+    }));
+    if (usage.state !== "end_turn") {
+      ctx.env.PROXY_METRICS.writeDataPoint(schema.incomplete_output_usage({
+        timestampMs: Date.now(),
+        context: requestContext,
+        values: {
+          usage,
+          messageParams: normalizeMessageParams(requestContext.messageParams),
+        },
+      }));
+    }
+    const cost = calculateCost(usage);
+    ctx.env.PROXY_METRICS.writeDataPoint(schema.cost_usage({
+      timestampMs: Date.now(),
+      context: requestContext,
+      values: { usage, cost },
+    }));
+  });
+  response.body.pipeTo(writable).catch(error => {
+    console.error({
+      message: "Error while processing a message (stream: true)",
+      cause: error instanceof Error ? error.message : (error as any)?.toString(),
     });
-
-
-  ctx.waitUntil(metricsPipeline);
-
-  const { readable, writable } = new TransformStream();
-  passthrough.pipeTo(writable).catch(() => {});
+  });
 
   const headers = new Headers(response.headers);
   headers.delete("content-encoding");
@@ -603,44 +228,53 @@ async function handleStreamingResponse(
 
 async function handleNonStreamingResponse(
   response: Response,
-  startTime: number,
-  writeMetrics: (points: AnalyticsEngineDataPoint[]) => void,
-  contextPromise: Promise<RequestContext>
+  requestContext: CCRequestContextForMessage,
+  ctx: Context<{ Bindings: Cloudflare.Env }>,
 ): Promise<Response> {
-  const body = await response.text();
-  const latencyMs = Date.now() - startTime;
-
-  try {
-    const context = await contextPromise;
-    const data: AnthropicResponse = JSON.parse(body);
-    const metrics = extractMetricsFromResponse(data, latencyMs, context);
-    const points = metricsToDataPoints(metrics);
-    writeMetrics(points);
-  } catch (error) {
-    console.error("Failed to parse response for metrics", error);
+  if (!response.body) {
+    return response;
   }
 
-  return new Response(body, {
-    status: response.status,
-    headers: response.headers,
-  });
+  async function writeMetrics(response: Response) {
+    try {
+      const message = await response.json<Message>();
+      const usage = normalizeUsage(message);
+      ctx.env.PROXY_METRICS.writeDataPoint(schema.token_usage({
+        timestampMs: Date.now(),
+        context: requestContext,
+        values: { usage },
+      }));
+
+      const cost = calculateCost(usage);
+      ctx.env.PROXY_METRICS.writeDataPoint(schema.cost_usage({
+        timestampMs: Date.now(),
+        context: requestContext,
+        values: { usage, cost },
+      }));
+    } catch (error) {
+      console.log({
+        message: "Error while processing a message (stream: false)",
+        cause: error instanceof Error ? error.message : (error as any)?.toString(),
+      });
+    }
+  }
+  ctx.executionCtx.waitUntil(writeMetrics(response.clone()));
+  return response;
 }
 
 export async function proxyRequest(
-  ctx: Context,
-  writeMetrics: (points: AnalyticsEngineDataPoint[]) => void,
+  ctx: Context<{ Bindings: Cloudflare.Env }>,
 ): Promise<Response> {
   const req = ctx.req.raw;
-  const url = new URL(req.url);
-  const targetUrl = new URL(`${url.pathname.replace(/^\/proxy/, "")}${url.search}`, ANTHROPIC_API_BASE);
 
-  const startTime = Date.now();
+  // Parsing request is inevitable.
+  // The request context is eventually necessary for metrics, controlling, etc.
+  const requestContext = await parseRequest(req.clone());
 
   const proxyHeaders = new Headers(req.headers);
-  proxyHeaders.set("host", ANTHROPIC_API_BASE.host);
+  proxyHeaders.set("host", requestContext.targetUrl.host);
 
-  const contextPromise = extractRequestContext(req);
-  const proxyRequest = new Request(targetUrl, {
+  const proxyRequest = new Request(requestContext.targetUrl, {
     method: req.method,
     body: req.body,
     headers: proxyHeaders,
@@ -650,17 +284,40 @@ export async function proxyRequest(
     signal: req.signal,
   });
 
-  const response = await fetch(proxyRequest);
+  const startedAt = performance.now(); // always 0
 
-  // TODO: Add failure metrics, upstream error tracking, etc.
-  //
-  // Bypass error responses for now.
-  //
-  if (response.ok && targetUrl.pathname === "/v1/messages") {
-    const isStreaming = response.headers.get("content-type")?.includes("text/event-stream");
-    return isStreaming
-      ? handleStreamingResponse(response, startTime, writeMetrics, contextPromise, ctx.executionCtx)
-      : handleNonStreamingResponse(response, startTime, writeMetrics, contextPromise);
+
+  let response: Response | null = null;
+  try {
+    response = await fetch(proxyRequest);
+  } catch (error) {
+    console.error({
+      message: "Failed to fetch upstream",
+      cause: error instanceof Error ? error.message : (error as any)?.toString(),
+    });
+  }
+
+  // timers progress on I/O
+  const latencyMs = performance.now() - startedAt;
+  ctx.env.PROXY_METRICS.writeDataPoint(schema.api_request({
+    timestampMs: Date.now(),
+    context: requestContext,
+    values: {
+      latencyMs,
+      url: requestContext.targetUrl.toString(),
+      rayId: req.headers.get("cf-ray"),
+      statusCode: response?.status || 0,
+    },
+  }));
+
+  if (!response) {
+    return new Response("Service Unavailable", { status: 503 });
+  }
+
+  if (response.ok && requestContext.target === "/v1/messages") {
+    return requestContext.messageParams.stream === true
+      ? handleStreamingResponse(response, requestContext, ctx)
+      : handleNonStreamingResponse(response, requestContext, ctx);
   }
 
   return response;

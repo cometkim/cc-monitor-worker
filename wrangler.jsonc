@@ -21,7 +21,8 @@
     },
     {
       "binding": "PROXY_METRICS",
-      "dataset": "claude_proxy_metrics_v20260223"
+      "dataset": "claude_proxy_metrics_v20260316"
     }
-  ]
+  ],
+  "upload_source_maps": true,
 }
