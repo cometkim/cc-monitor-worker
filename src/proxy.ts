@@ -153,6 +153,7 @@ class SSEMetricCollectorStream extends TransformStream<Uint8Array, Uint8Array> {
   }
 
   #usage: NormalizedUsage | null = null;
+  flushed = false;
 
   #onMessageStartEvent(event: RawMessageStartEvent) {
     this.#usage = normalizeUsage(event.message, new Date());
@@ -167,6 +168,8 @@ class SSEMetricCollectorStream extends TransformStream<Uint8Array, Uint8Array> {
   }
 
   #flush() {
+    this.flushed = true;
+
     if (!this.#usage) {
       console.error("No usage data to write");
       return;
@@ -189,7 +192,7 @@ async function handleStreamingResponse(
     return response;
   }
 
-  const { readable, writable } = new SSEMetricCollectorStream(usage => {
+  const stream = new SSEMetricCollectorStream(usage => {
     ctx.env.PROXY_METRICS.writeDataPoint(schema.token_usage({
       timestampMs: Date.now(),
       context: requestContext,
@@ -213,10 +216,11 @@ async function handleStreamingResponse(
       values: { usage, cost },
     }));
   });
-  response.body.pipeTo(writable).catch(error => {
+  response.body.pipeTo(stream.writable).catch(error => {
     console.error({
       message: "Error while processing a message (stream: true)",
       cause: error instanceof Error ? error.message : (error as any)?.toString(),
+      flushed: stream.flushed,
     });
   });
 
@@ -224,7 +228,7 @@ async function handleStreamingResponse(
   headers.delete("content-encoding");
   headers.delete("content-length");
 
-  return new Response(readable, {
+  return new Response(stream.readable, {
     status: response.status,
     headers,
   });
