@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { except } from "hono/combine";
 import { createMiddleware } from "hono/factory";
 import { bearerAuth } from "hono/bearer-auth";
 import type {
@@ -111,22 +112,27 @@ app.post("/v1/metrics", auth, async (c) => {
   }
 });
 
-app.all("/proxy/*", proxyAuth, async (c) => {
-  try {
-    const response = await proxyRequest(c);
-    return response;
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : (error as any).toString();
-    console.error({
-      message: "Proxy error",
-      cause: errorMessage,
-    });
-    const errorResponse: Status = {
-      code: 13,
-      message: errorMessage,
-    };
-    return c.json(errorResponse, 502);
-  }
-});
+app.all(
+  "/proxy/*",
+  // bypass auth for Anthropic's internal API requests
+  except("/proxy/api/*", proxyAuth), 
+  async (c) => {
+    try {
+      const response = await proxyRequest(c);
+      return response;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : (error as any).toString();
+      console.error({
+        message: "Proxy error",
+        cause: errorMessage,
+      });
+      const errorResponse: Status = {
+        code: 13,
+        message: errorMessage,
+      };
+      return c.json(errorResponse, 502);
+    }
+  },
+);
 
 export default app;
