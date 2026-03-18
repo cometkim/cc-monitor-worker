@@ -31,6 +31,7 @@ class SSEMetricCollectorStream extends TransformStream<Uint8Array, Uint8Array> {
   #buffer = new Uint8Array(512);
   #cursor = 0;
 
+  #eventCount = 0;
   #eventType = "";
   #dataView = new Uint8Array(0);
 
@@ -122,7 +123,7 @@ class SSEMetricCollectorStream extends TransformStream<Uint8Array, Uint8Array> {
     while (requiredSize > newSize) {
       newSize *= 2;
     }
-    console.log({
+    console.debug({
       message: `Growing buffer from ${this.#buffer.byteLength} to ${newSize}`,
       size: this.#buffer.byteLength,
       requiredSize,
@@ -134,6 +135,7 @@ class SSEMetricCollectorStream extends TransformStream<Uint8Array, Uint8Array> {
   }
 
   #onEvent(eventType: string, buffer: Uint8Array) {
+    this.#eventCount += 1;
     // Parse only necessary event and skip for intermidiate events
     switch (eventType) {
       case "message_start": {
@@ -171,7 +173,13 @@ class SSEMetricCollectorStream extends TransformStream<Uint8Array, Uint8Array> {
     this.flushed = true;
 
     if (!this.#usage) {
-      console.error("No usage data to write");
+      console.error({
+        message: "No usage data to write",
+        buffer: this.#textDecoder.decode(
+          this.#buffer.subarray(0, Math.min(this.#cursor, 1024)),
+        ),
+        eventCount: this.#eventCount,
+      });
       return;
     }
 
