@@ -113,27 +113,7 @@ app.post("/v1/metrics", auth, async (c) => {
 
 app.all("/proxy/*", proxyAuth, async (c) => {
   try {
-    const response = await proxyRequest(c, (points) => {
-      let writtenDataPoints = 0;
-      let rejectedDataPoints = 0;
-      for (const dataPoint of points) {
-        try {
-          c.env.PROXY_METRICS.writeDataPoint(dataPoint);
-          writtenDataPoints++;
-        } catch (error) {
-          console.error({
-            message: "Failed to write data point", 
-            cause: error instanceof Error ? error.message : (error as any).toString(), 
-          });
-          rejectedDataPoints++;
-        }
-      }
-      console.debug({
-        message: `Processed ${points.length} data points: ${writtenDataPoints} written, ${rejectedDataPoints} rejected`,
-        writtenDataPoints,
-        rejectedDataPoints,
-      });
-    });
+    const response = await proxyRequest(c);
     return response;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : (error as any).toString();
