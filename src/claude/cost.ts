@@ -157,10 +157,10 @@ const MODEL_PRICES: [prefix: string, price: ModelUnitPrice][] = [
   ["claude-3-opus",     { input: 15, output: 75 }],
 ];
 
-export function getModelUnitPrice(model: string): ModelUnitPrice | null {
+export function getModelUnitPrice(model: string): [id: string, price: ModelUnitPrice] | null {
   for (const [prefix, prices] of MODEL_PRICES) {
     if (model.startsWith(prefix)) {
-      return prices;
+      return [prefix, prices] as const;
     }
   }
   return null;
@@ -195,13 +195,25 @@ export interface Cost {
 /**
  * @see https://platform.claude.com/docs/en/about-claude/pricing
  */
-export function calculateCost(usage: NormalizedUsage): Cost {
+export function calculateCost(usage: NormalizedUsage): Cost | null {
   const MTok = 1_000_000;
 
+  const pricing = getModelUnitPrice(usage.model);
+  if (!pricing) {
+    console.warn({
+      message: `Unknown model ${usage.model}`,
+      model: usage.model,
+      messageId: usage.messageId,
+    });
+    return null;
+  }
+
+  const [model, unitPrice] = pricing;
+  const inputPrice = unitPrice.input / MTok;
+  const outputPrice = unitPrice.output / MTok;
+
   const isFastMode = usage.speed === "fast";
-  // According to the docs: https://platform.claude.com/docs/en/about-claude/pricing#fast-mode-pricing
-  // Fast mode pricing applies across the full context window, including requests over 200k input tokens.
-  const isLongContext = !isFastMode && usage.effectiveInputTokens > 200_000;
+  const isLongContext = usage.effectiveInputTokens > 200_000;
   const isUSOnly = usage.inferenceGeo === "us_only";
 
   let baseMultiplier = 1;
@@ -209,15 +221,26 @@ export function calculateCost(usage: NormalizedUsage): Cost {
   if (usage.serviceTier === "batch") baseMultiplier *= CostMultiplier.Batch;
   if (isUSOnly) baseMultiplier *= CostMultiplier.US_Only;
 
-  const inputMultiplier = isLongContext ? CostMultiplier.Long_Context_Input : 1;
-  const outputMultiplier = isLongContext ? CostMultiplier.Long_Context_Output : 1; 
+  let inputMultiplier = 1;
+  let outputMultiplier = 1;
 
-  const input = usage.inputTokens / MTok * baseMultiplier * inputMultiplier;
-  const cacheRead = usage.cacheRead / MTok * CostMultiplier.Cache_Read * baseMultiplier * inputMultiplier;
-  const cacheCreation_5m = usage.cacheCreation_5m / MTok * CostMultiplier.Cache_Creation_5m * baseMultiplier * inputMultiplier;
-  const cacheCreation_1h = usage.cacheCreation_1h / MTok * CostMultiplier.Cache_Creation_1h * baseMultiplier * inputMultiplier;
+  // Premium pricing for long context input
+  // See https://platform.claude.com/docs/en/about-claude/pricing#long-context-pricing
+  if (isLongContext && !isFastMode) {
+    if (model === "claude-sonnet-4-5" || model === "claude-sonnet-4-0" || model === "claude-sonnet-4") {
+      inputMultiplier = CostMultiplier.Long_Context_Input;
+      outputMultiplier = CostMultiplier.Long_Context_Output;
+    }
+    // Otherwise it's free
+    // See https://claude.com/blog/1m-context-ga
+  }
 
-  const output = usage.outputTokens / MTok * baseMultiplier * outputMultiplier;
+  const input = usage.inputTokens * inputPrice * baseMultiplier * inputMultiplier;
+  const cacheRead = usage.cacheRead * inputPrice * baseMultiplier * inputMultiplier * CostMultiplier.Cache_Read;
+  const cacheCreation_5m = usage.cacheCreation_5m * inputPrice * baseMultiplier * inputMultiplier * CostMultiplier.Cache_Creation_5m;
+  const cacheCreation_1h = usage.cacheCreation_1h * inputPrice * baseMultiplier * inputMultiplier * CostMultiplier.Cache_Creation_1h;
+
+  const output = usage.outputTokens * outputPrice * baseMultiplier * outputMultiplier;
 
   return {
     input,

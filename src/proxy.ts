@@ -210,11 +210,13 @@ async function handleStreamingResponse(
       }));
     }
     const cost = calculateCost(usage);
-    ctx.env.PROXY_METRICS.writeDataPoint(schema.cost_usage({
-      timestampMs: Date.now(),
-      context: requestContext,
-      values: { usage, cost },
-    }));
+    if (cost) {
+      ctx.env.PROXY_METRICS.writeDataPoint(schema.cost_usage({
+        timestampMs: Date.now(),
+        context: requestContext,
+        values: { usage, cost },
+      }));
+    }
   });
   response.body.pipeTo(stream.writable).catch(error => {
     console.error({
@@ -254,11 +256,13 @@ async function handleNonStreamingResponse(
       }));
 
       const cost = calculateCost(usage);
-      ctx.env.PROXY_METRICS.writeDataPoint(schema.cost_usage({
-        timestampMs: Date.now(),
-        context: requestContext,
-        values: { usage, cost },
-      }));
+      if (cost) {
+        ctx.env.PROXY_METRICS.writeDataPoint(schema.cost_usage({
+          timestampMs: Date.now(),
+          context: requestContext,
+          values: { usage, cost },
+        }));
+      }
     } catch (error) {
       console.log({
         message: "Error while processing a message (stream: false)",
