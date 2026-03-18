@@ -51,8 +51,7 @@ export async function parseRequest(req: Request): Promise<CCRequestContext> {
 
   try {
     if (targetUrl.pathname === "/v1/messages") {
-      const cloned = req.clone();
-      const messageParams = await cloned.json() as MessageCreateParams;
+      const messageParams = await req.json() as MessageCreateParams;
       const userMetadata = messageParams.metadata
         ? parseUserMetadata(messageParams.metadata)
         : null;
