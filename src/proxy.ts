@@ -126,6 +126,7 @@ class SSEMetricCollectorStream extends TransformStream<Uint8Array, Uint8Array> {
     console.debug({
       message: `Growing buffer from ${this.#buffer.byteLength} to ${newSize}`,
       size: this.#buffer.byteLength,
+      eventCount: this.#eventCount,
       requiredSize,
       newSize,
     });
@@ -226,6 +227,7 @@ async function handleStreamingResponse(
       }));
     }
   });
+
   response.body.pipeTo(stream.writable).catch(error => {
     console.error({
       message: "Error while processing a message (stream: true)",
