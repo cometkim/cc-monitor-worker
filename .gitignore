@@ -1,2 +1,5 @@
 node_modules/
 .wrangler/
+
+# comment out this for custom deployment
+.wrangler.deployment.json
