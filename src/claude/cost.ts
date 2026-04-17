@@ -149,6 +149,7 @@ const MODEL_PRICES: [prefix: string, price: ModelUnitPrice][] = [
   ["claude-3-5-sonnet", { input: 3, output: 15 }],
 
   // Opus Series
+  ["claude-opus-4-7",   { input: 5, output: 25 }],
   ["claude-opus-4-6",   { input: 5, output: 25 }],
   ["claude-opus-4-5",   { input: 5, output: 25 }],
   ["claude-opus-4-1",   { input: 15, output: 75 }],
