@@ -144,7 +144,6 @@ const MODEL_PRICES: [prefix: string, price: ModelUnitPrice][] = [
   ["claude-sonnet-4-6", { input: 3, output: 15 }],
   ["claude-sonnet-4-5", { input: 3, output: 15 }],
   ["claude-sonnet-4-0", { input: 3, output: 15 }],
-  ["claude-sonnet-4", { input: 3, output: 15 }],
   ["claude-3-7-sonnet", { input: 3, output: 15 }],
   ["claude-3-5-sonnet", { input: 3, output: 15 }],
 
@@ -155,7 +154,6 @@ const MODEL_PRICES: [prefix: string, price: ModelUnitPrice][] = [
   ["claude-opus-4-5", { input: 5, output: 25 }],
   ["claude-opus-4-1", { input: 15, output: 75 }],
   ["claude-opus-4-0", { input: 15, output: 75 }],
-  ["claude-opus-4", { input: 15, output: 75 }],
   ["claude-3-opus", { input: 15, output: 75 }],
 ];
 
