@@ -16,7 +16,7 @@ type NormalizedUsagePayload = {
   model: string,
   inferenceGeo: "not_available" | "us_only",
   serviceTier: "standard" | "priority" | "batch",
-  speed: "fast" | null,
+  speed: "fast" | "standard",
 
   inputTokens: number;
   cacheRead: number;
@@ -73,9 +73,9 @@ export function normalizeUsage({ id, model, usage }: Message, startAt: Date): No
 
   // See https://platform.claude.com/docs/en/build-with-claude/fast-mode
   const speed = "speed" in usage && usage.speed === "fast"
-    ? "fast" : null;
+    ? "fast" : "standard";
 
-  const webFetchRequests = usage.server_tool_use?.web_fetch_requests?? 0;
+  const webFetchRequests = usage.server_tool_use?.web_fetch_requests ?? 0;
   const webSearchRequests = usage.server_tool_use?.web_search_requests ?? 0;
 
   return {
@@ -136,26 +136,27 @@ export interface ModelUnitPrice {
 
 const MODEL_PRICES: [prefix: string, price: ModelUnitPrice][] = [
   // Haiku Series
-  ["claude-haiku-4-5",  { input: 1, output: 5 }],
-  ["claude-3-5-haiku",  { input: 0.8, output: 4 }],
-  ["claude-3-haiku",    { input: 0.25, output: 1.25 }],
+  ["claude-haiku-4-5", { input: 1, output: 5 }],
+  ["claude-3-5-haiku", { input: 0.8, output: 4 }],
+  ["claude-3-haiku", { input: 0.25, output: 1.25 }],
 
   // Sonnet Series
   ["claude-sonnet-4-6", { input: 3, output: 15 }],
   ["claude-sonnet-4-5", { input: 3, output: 15 }],
   ["claude-sonnet-4-0", { input: 3, output: 15 }],
-  ["claude-sonnet-4",   { input: 3, output: 15 }],
+  ["claude-sonnet-4", { input: 3, output: 15 }],
   ["claude-3-7-sonnet", { input: 3, output: 15 }],
   ["claude-3-5-sonnet", { input: 3, output: 15 }],
 
   // Opus Series
-  ["claude-opus-4-7",   { input: 5, output: 25 }],
-  ["claude-opus-4-6",   { input: 5, output: 25 }],
-  ["claude-opus-4-5",   { input: 5, output: 25 }],
-  ["claude-opus-4-1",   { input: 15, output: 75 }],
-  ["claude-opus-4-0",   { input: 15, output: 75 }],
-  ["claude-opus-4",     { input: 15, output: 75 }],
-  ["claude-3-opus",     { input: 15, output: 75 }],
+  ["claude-opus-4-8", { input: 5, output: 25 }],
+  ["claude-opus-4-7", { input: 5, output: 25 }],
+  ["claude-opus-4-6", { input: 5, output: 25 }],
+  ["claude-opus-4-5", { input: 5, output: 25 }],
+  ["claude-opus-4-1", { input: 15, output: 75 }],
+  ["claude-opus-4-0", { input: 15, output: 75 }],
+  ["claude-opus-4", { input: 15, output: 75 }],
+  ["claude-3-opus", { input: 15, output: 75 }],
 ];
 
 export function getModelUnitPrice(model: string): [id: string, price: ModelUnitPrice] | null {
@@ -181,8 +182,11 @@ export const CostMultiplier = {
   // NOTE: Claude Code never uses batch requests (at least for now)
   Batch: 0.5,
 
-  // Currently only available for Opus 4.6
-  Fast_Mode: 6,
+  // Opus 4.6 - 4.7
+  Fast_Mode_Legacy: 6,
+
+  // Opus 4.8
+  Fast_Mode: 2,
 } as const;
 
 export interface Cost {
@@ -218,7 +222,14 @@ export function calculateCost(usage: NormalizedUsage): Cost | null {
   const isUSOnly = usage.inferenceGeo === "us_only";
 
   let baseMultiplier = 1;
-  if (isFastMode) baseMultiplier *= CostMultiplier.Fast_Mode;
+  if (isFastMode) {
+    if (model === "claude-opus-4-6" || model === "claude-opus-4-7") {
+      baseMultiplier *= CostMultiplier.Fast_Mode_Legacy;
+    } else if (model.startsWith("claude")) {
+      baseMultiplier *= CostMultiplier.Fast_Mode;
+    }
+    // else fallback, it might be third-party models that doens't support fast mode
+  };
   if (usage.serviceTier === "batch") baseMultiplier *= CostMultiplier.Batch;
   if (isUSOnly) baseMultiplier *= CostMultiplier.US_Only;
 
