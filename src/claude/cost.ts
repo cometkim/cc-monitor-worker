@@ -155,6 +155,10 @@ const MODEL_PRICES: [prefix: string, price: ModelUnitPrice][] = [
   ["claude-opus-4-1", { input: 15, output: 75 }],
   ["claude-opus-4-0", { input: 15, output: 75 }],
   ["claude-3-opus", { input: 15, output: 75 }],
+
+  // Fable & Mythos
+  ["claude-fable-5", { input: 10, output: 50 }],
+  ["claude-mythos-5", { input: 10, output: 50 }],
 ];
 
 export function getModelUnitPrice(model: string): [id: string, price: ModelUnitPrice] | null {
