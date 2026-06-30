@@ -141,6 +141,7 @@ const MODEL_PRICES: [prefix: string, price: ModelUnitPrice][] = [
   ["claude-3-haiku", { input: 0.25, output: 1.25 }],
 
   // Sonnet Series
+  ["claude-sonnet-5", { input: 3, output: 15 }],
   ["claude-sonnet-4-6", { input: 3, output: 15 }],
   ["claude-sonnet-4-5", { input: 3, output: 15 }],
   ["claude-sonnet-4-0", { input: 3, output: 15 }],
@@ -162,6 +163,12 @@ const MODEL_PRICES: [prefix: string, price: ModelUnitPrice][] = [
 ];
 
 export function getModelUnitPrice(model: string): [id: string, price: ModelUnitPrice] | null {
+  // Claude Sonnet 5 is available at an introductory price of $2/Mtok for input and $10/Mtok for output through August 31, 2026.
+  // Then it will back to the standard pricing.
+  if (model.startsWith("claude-sonnet-5") && new Date() < new Date("2026-09-01")) {
+    return ["claude-sonnet-5", { input: 2, output: 10 }] as const;
+  }
+
   for (const [prefix, prices] of MODEL_PRICES) {
     if (model.startsWith(prefix)) {
       return [prefix, prices] as const;
